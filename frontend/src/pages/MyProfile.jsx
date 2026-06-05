@@ -8,7 +8,7 @@ import AddRecommendationSheet from "../components/AddRecommendationSheet";
 import AddTripSheet from "../components/AddTripSheet";
 import { FreccosLogo } from "./Splash";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
-import { Settings, Share2, Copy, LogOut, Pencil, Trash2, ChevronLeft, Plus, Map, MoreHorizontal } from "lucide-react";
+import { Settings, Share2, Copy, LogOut, Pencil, Trash2, ChevronLeft, Plus, Map, MoreHorizontal, Download } from "lucide-react";
 import { toast } from "sonner";
 import { formatMonthYear } from "../lib/utils-frec";
 
@@ -387,6 +387,19 @@ function SettingsSheet({ open, onClose, user, onUpdated, onLogout }) {
           <div className="space-y-2">
             <button data-testid="settings-edit" className="list-row w-full text-left ios-card" onClick={() => setEditing(true)} style={{ border: "none" }}>
               <Pencil size={16} /> <span style={{ flex: 1 }}>Edit profile</span> <span className="muted">›</span>
+            </button>
+            <button
+              data-testid="settings-install"
+              className="list-row w-full text-left ios-card"
+              onClick={() => {
+                if (typeof window !== "undefined" && window.freccosShowInstall) {
+                  window.freccosShowInstall();
+                  onClose?.();
+                }
+              }}
+              style={{ border: "none" }}
+            >
+              <Download size={16} /> <span style={{ flex: 1 }}>Install Freccos as an app</span> <span className="muted">›</span>
             </button>
             <button data-testid="settings-logout" className="list-row w-full text-left ios-card" onClick={onLogout} style={{ border: "none", color: "#FF453A" }}>
               <LogOut size={16} /> <span style={{ flex: 1 }}>Log out</span>
