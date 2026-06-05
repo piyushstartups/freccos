@@ -8,7 +8,7 @@ export default function Fab({ onAddRec, onAddTrip, onAddBucket }) {
       {open && (
         <div
           onClick={() => setOpen(false)}
-          style={{ position: "fixed", inset: 0, zIndex: 35, background: "rgba(0,0,0,0.18)" }}
+          style={{ position: "fixed", inset: 0, zIndex: 10000, background: "rgba(0,0,0,0.18)" }}
           data-testid="fab-backdrop"
         />
       )}
@@ -19,7 +19,7 @@ export default function Fab({ onAddRec, onAddTrip, onAddBucket }) {
             right: "max(16px, calc((100vw - 430px)/2 + 16px))",
             bottom: 160,
             display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-end",
-            zIndex: 41,
+            zIndex: 10003,
           }}
           className="fade-in"
         >
