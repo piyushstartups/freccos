@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / '.env', override=False)
 
 import os
 import re
@@ -752,10 +752,10 @@ async def get_user_profile(user_id: str, user: dict = Depends(current_user)):
         raise HTTPException(status_code=404, detail="User not found")
     # Cities = union of (cities with recommendations) and (manually-added trips)
     rec_ids_by_city: dict = {}
-    async for r in db.recommendations.find({"user_id": user_id}, {"_id": 0}):
+    async for r in db.recommendations.find({"user_id": user_id}, {"_id": 0}).limit(1000):
         rec_ids_by_city.setdefault(r["city_id"], []).append(r)
     trip_city_ids = set()
-    async for t in db.user_trips.find({"user_id": user_id}, {"_id": 0, "city_id": 1}):
+    async for t in db.user_trips.find({"user_id": user_id}, {"_id": 0, "city_id": 1}).limit(500):
         trip_city_ids.add(t["city_id"])
     all_city_ids = list(set(rec_ids_by_city.keys()) | trip_city_ids)
     cities = []
@@ -980,7 +980,7 @@ async def list_city_recommendations(city_id: str, category: Optional[str] = None
     if category and category != "all":
         query["category"] = category
     recs = []
-    async for r in db.recommendations.find(query, {"_id": 0}):
+    async for r in db.recommendations.find(query, {"_id": 0}).limit(500):
         recs.append(r)
     if not recs:
         return []
@@ -1037,11 +1037,11 @@ async def list_trips(user: dict = Depends(current_user)):
     """Cities the user has been to (explicit trips + cities where they have recs)."""
     rec_city_ids = set()
     rec_counts: dict = {}
-    async for r in db.recommendations.find({"user_id": user["id"]}, {"_id": 0, "city_id": 1}):
+    async for r in db.recommendations.find({"user_id": user["id"]}, {"_id": 0, "city_id": 1}).limit(1000):
         rec_city_ids.add(r["city_id"])
         rec_counts[r["city_id"]] = rec_counts.get(r["city_id"], 0) + 1
     explicit = set()
-    async for t in db.user_trips.find({"user_id": user["id"]}, {"_id": 0, "city_id": 1}):
+    async for t in db.user_trips.find({"user_id": user["id"]}, {"_id": 0, "city_id": 1}).limit(500):
         explicit.add(t["city_id"])
     all_ids = list(rec_city_ids | explicit)
     if not all_ids:
@@ -1085,7 +1085,7 @@ async def delete_trip(city_id: str, user: dict = Depends(current_user)):
 # ----------------------- Trip Plans / Bucket List -----------------------
 @api.get("/trip-plans")
 async def list_trip_plans(user: dict = Depends(current_user)):
-    cursor = db.trip_plans.find({"user_id": user["id"]}, {"_id": 0})
+    cursor = db.trip_plans.find({"user_id": user["id"]}, {"_id": 0}).limit(200)
     plans = [p async for p in cursor]
     if not plans:
         return []
