@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../lib/api";
+import HeaderBrand from "../components/HeaderBrand";
 import { Briefcase } from "lucide-react";
 
 export default function TripPlans() {
@@ -17,22 +18,16 @@ export default function TripPlans() {
 
   if (plans === null) return <div className="p-6 t-sub muted">Loading...</div>;
 
-  const upcoming = plans.filter((p) => p.saved_count > 0);
-  const bucket = plans.filter((p) => p.saved_count === 0);
-
   return (
     <div className="pb-32 fade-in" data-testid="trips-page">
-      <div style={{ background: "#1C1C1E", color: "#fff", padding: "44px 16px 16px" }}>
-        <h1 className="t-large" style={{ color: "#fff" }}>Trip plans</h1>
-        <p className="t-sub" style={{ color: "#8E8E93" }}>Cities you're planning, sorted out.</p>
-      </div>
+      <HeaderBrand title="Bucket list" subtitle="Cities you're planning, sorted out." />
 
       {plans.length === 0 && (
         <div className="px-6 mt-8" data-testid="trips-empty">
           <Briefcase size={36} color="#C7C7CC" />
-          <h3 className="t-title2 mt-3">No trips planned yet</h3>
+          <h3 className="t-title2 mt-3">Nothing on your bucket list yet</h3>
           <p className="t-sub muted mt-1">
-            Explore a city and save recommendations from friends to start planning.
+            Explore a city and save recommendations from friends, or tap + to add a city you're dreaming of.
           </p>
           <Link to="/explore" className="btn-pill btn-primary inline-flex mt-4">
             Explore cities
@@ -40,15 +35,16 @@ export default function TripPlans() {
         </div>
       )}
 
-      {upcoming.length > 0 && (
-        <>
-          <div className="section-header">Upcoming trips</div>
-          <div className="ios-card mx-4" style={{ overflow: "hidden" }} data-testid="upcoming-list">
-            {upcoming.map((p) => (
+      {plans.length > 0 && (
+        <div className="ios-card mx-4" style={{ overflow: "hidden", marginTop: 12 }} data-testid="bucket-list">
+          {plans
+            .slice()
+            .sort((a, b) => (b.saved_count - a.saved_count))
+            .map((p) => (
               <button
                 key={p.id}
-                data-testid={`trip-${p.city_id}`}
-                onClick={() => nav(`/trips/${p.city_id}`)}
+                data-testid={`bucket-${p.city_id}`}
+                onClick={() => nav(p.saved_count > 0 ? `/trips/${p.city_id}` : `/city/${p.city_id}`)}
                 className="list-row w-full text-left"
                 style={{ background: "transparent", border: "none" }}
               >
@@ -56,38 +52,15 @@ export default function TripPlans() {
                 <div style={{ flex: 1 }}>
                   <div className="t-title3">{p.city?.name}</div>
                   <div className="t-cap muted">
-                    {p.saved_count} saved · {p.checked_count} ticked
+                    {p.saved_count > 0
+                      ? `${p.saved_count} saved · ${p.checked_count} ticked`
+                      : "No recommendations saved yet"}
                   </div>
                 </div>
                 <span className="muted">›</span>
               </button>
             ))}
-          </div>
-        </>
-      )}
-
-      {bucket.length > 0 && (
-        <>
-          <div className="section-header">Bucket list</div>
-          <div className="ios-card mx-4" style={{ overflow: "hidden" }} data-testid="bucket-list">
-            {bucket.map((p) => (
-              <button
-                key={p.id}
-                data-testid={`bucket-${p.city_id}`}
-                onClick={() => nav(`/city/${p.city_id}`)}
-                className="list-row w-full text-left"
-                style={{ background: "transparent", border: "none" }}
-              >
-                <span style={{ fontSize: 24 }}>{p.city?.flag_emoji}</span>
-                <div style={{ flex: 1 }}>
-                  <div className="t-title3">{p.city?.name}</div>
-                  <div className="t-cap muted">No recommendations saved yet</div>
-                </div>
-                <span className="muted">›</span>
-              </button>
-            ))}
-          </div>
-        </>
+        </div>
       )}
     </div>
   );

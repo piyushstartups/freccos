@@ -1,10 +1,13 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../lib/api";
 import { useAuth } from "../lib/auth";
 import Avatar from "../components/Avatar";
+import BottomSheet from "../components/BottomSheet";
+import AddRecommendationSheet from "../components/AddRecommendationSheet";
+import { FreccosLogo } from "./Splash";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
-import { Settings, Share2, Copy, LogOut, Pencil, Trash2, ChevronLeft, X } from "lucide-react";
+import { Settings, Share2, Copy, LogOut, Pencil, Trash2, ChevronLeft, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { formatMonthYear } from "../lib/utils-frec";
 
@@ -12,21 +15,16 @@ export default function MyProfile() {
   const { user, logout, setUser } = useAuth();
   const nav = useNavigate();
   const [profile, setProfile] = useState(null);
-  const [tab, setTab] = useState("trips");
-  const [bucket, setBucket] = useState([]);
   const [openCityId, setOpenCityId] = useState(null);
   const [category, setCategory] = useState("all");
   const [myRecs, setMyRecs] = useState([]);
   const [showSettings, setShowSettings] = useState(false);
-  const [editing, setEditing] = useState(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addLockedCity, setAddLockedCity] = useState(null);
 
   const load = async () => {
-    const [{ data: p }, { data: plans }] = await Promise.all([
-      api.get(`/users/${user.id}`),
-      api.get("/trip-plans"),
-    ]);
+    const { data: p } = await api.get(`/users/${user.id}`);
     setProfile(p);
-    setBucket(plans.filter((pl) => pl.saved_count === 0));
   };
   useEffect(() => { if (user?.id) load(); /* eslint-disable-next-line */ }, [user?.id]);
 
@@ -68,7 +66,7 @@ export default function MyProfile() {
 
   const cityOpen = profile.cities.find((c) => c.id === openCityId);
 
-  // group by country for Trips tab
+  // Group trip cities by country
   const byCountry = {};
   for (const c of profile.cities || []) {
     const key = c.country || "Other";
@@ -77,15 +75,19 @@ export default function MyProfile() {
 
   return (
     <div className="pb-32 fade-in" data-testid="my-profile">
-      <div style={{ background: "#1C1C1E", color: "#fff", padding: "44px 16px 22px", position: "relative" }}>
+      <div style={{ background: "#1C1C1E", color: "#fff", padding: "40px 16px 22px", position: "relative" }}>
+        <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
+          <FreccosLogo size={22} />
+          <span className="t-label" style={{ color: "#8E8E93", letterSpacing: 1.2 }}>FRECCOS</span>
+        </div>
         <button
           data-testid="settings-btn"
           onClick={() => setShowSettings(true)}
-          style={{ position: "absolute", top: 44, right: 16, background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", padding: 8, borderRadius: 9999 }}
+          style={{ position: "absolute", top: 40, right: 16, background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", padding: 8, borderRadius: 9999 }}
         >
           <Settings size={16} />
         </button>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 mt-1">
           <Avatar user={profile} size={72} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <h1 className="t-title1" style={{ color: "#fff" }}>{profile.name}</h1>
@@ -107,20 +109,27 @@ export default function MyProfile() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="px-4 pt-3" style={{ position: "sticky", top: 0, background: "#F2F2F7", zIndex: 4 }}>
-        <div style={{ background: "rgba(120,120,128,0.12)", borderRadius: 9999, padding: 4, display: "flex" }}>
-          <TabBtn id="trips" active={tab === "trips"} onClick={() => { setTab("trips"); setOpenCityId(null); }} label="Trips" />
-          <TabBtn id="bucket" active={tab === "bucket"} onClick={() => { setTab("bucket"); setOpenCityId(null); }} label="Bucket list" />
+      {/* Trips header + Add CTA */}
+      {!openCityId && (
+        <div className="px-4 pt-4 flex items-center justify-between">
+          <h2 className="t-title2">Trips</h2>
+          <button
+            data-testid="me-add-rec"
+            onClick={() => { setAddLockedCity(null); setAddOpen(true); }}
+            className="btn-pill"
+            style={{ background: "rgba(10,132,255,0.12)", color: "#0A84FF", padding: "8px 14px", fontSize: 13 }}
+          >
+            <Plus size={14} /> Add a recommendation
+          </button>
         </div>
-      </div>
+      )}
 
-      {/* TRIPS TAB */}
-      {tab === "trips" && !openCityId && (
+      {/* Trips list */}
+      {!openCityId && (
         <div className="mt-2" data-testid="trips-list">
           {Object.keys(byCountry).length === 0 ? (
-            <div className="px-6 mt-6" data-testid="me-empty">
-              <p className="t-sub muted">You haven't added any places yet. Tap + to add your first recommendation.</p>
+            <div className="px-6 mt-4" data-testid="me-empty">
+              <p className="t-sub muted">You haven't added any places yet. Tap "Add a recommendation" above to log your first trip.</p>
             </div>
           ) : (
             Object.entries(byCountry).map(([country, cities]) => (
@@ -150,16 +159,24 @@ export default function MyProfile() {
         </div>
       )}
 
-      {/* TRIPS — city detail (my own) */}
-      {tab === "trips" && openCityId && cityOpen && (
+      {/* City detail (my own) */}
+      {openCityId && cityOpen && (
         <div data-testid="me-city-detail">
-          <div className="px-4 pt-3">
+          <div className="px-4 pt-3 flex items-center justify-between gap-2">
             <button onClick={() => { setOpenCityId(null); setMyRecs([]); setCategory("all"); }}
               style={{ background: "transparent", border: "none", color: "#0A84FF" }}>
-              <ChevronLeft size={16} style={{ verticalAlign: "middle" }} /> All cities
+              <ChevronLeft size={16} style={{ verticalAlign: "middle" }} /> All trips
             </button>
-            <h2 className="t-title1 mt-1">{cityOpen.flag_emoji} {cityOpen.name}</h2>
+            <button
+              data-testid="me-city-add-rec"
+              onClick={() => { setAddLockedCity(cityOpen); setAddOpen(true); }}
+              className="btn-pill"
+              style={{ background: "rgba(10,132,255,0.12)", color: "#0A84FF", padding: "8px 12px", fontSize: 13 }}
+            >
+              <Plus size={14} /> Add
+            </button>
           </div>
+          <h2 className="t-title1 px-4 mt-1">{cityOpen.flag_emoji} {cityOpen.name}</h2>
           <CategoryTabs value={category} onChange={setCategory} />
           <div className="px-4 space-y-3">
             {myRecs.map((r) => (
@@ -190,41 +207,11 @@ export default function MyProfile() {
         </div>
       )}
 
-      {/* BUCKET LIST TAB */}
-      {tab === "bucket" && (
-        <div className="mt-2" data-testid="bucket-tab">
-          {bucket.length === 0 ? (
-            <div className="px-6 mt-6">
-              <p className="t-sub muted">Nothing on your bucket list yet. Tap + and pick a city you're dreaming of.</p>
-            </div>
-          ) : (
-            <div className="ios-card mx-4" style={{ overflow: "hidden" }}>
-              {bucket.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => nav(`/city/${p.city_id}`)}
-                  className="list-row w-full text-left"
-                  data-testid={`me-bucket-${p.city_id}`}
-                  style={{ background: "transparent", border: "none" }}
-                >
-                  <span style={{ fontSize: 22 }}>{p.city?.flag_emoji}</span>
-                  <div style={{ flex: 1 }}>
-                    <div className="t-title3">{p.city?.name}</div>
-                    <div className="t-cap muted">Bucket list</div>
-                  </div>
-                  <span className="muted">›</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Invite code card */}
       <div className="section-header">Your invite code</div>
       <div className="ios-card mx-4 px-4 py-4 flex items-center gap-3" data-testid="invite-card">
         <div style={{ flex: 1 }}>
-          <div className="t-cap muted">Share with friends</div>
+          <div className="t-cap muted">Bring friends along</div>
           <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: 3 }} data-testid="invite-code">
             {user.invite_code}
           </div>
@@ -253,32 +240,16 @@ export default function MyProfile() {
         onUpdated={(updated) => { setUser(updated); load(); }}
         onLogout={async () => { await logout(); nav("/login", { replace: true }); }}
       />
+
+      <AddRecommendationSheet
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        lockedCity={addLockedCity}
+        onCreated={() => { load(); if (openCityId) loadRecs(openCityId, category); }}
+      />
     </div>
   );
 }
-
-function TabBtn({ active, onClick, label, id }) {
-  return (
-    <button
-      data-testid={`profile-tab-${id}`}
-      onClick={onClick}
-      style={{
-        flex: 1, padding: "8px 14px",
-        border: "none",
-        background: active ? "#fff" : "transparent",
-        color: "#1C1C1E", fontWeight: 600, fontSize: 14,
-        borderRadius: 9999,
-        boxShadow: active ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
-        transition: "all 200ms ease-out",
-      }}
-    >
-      {label}
-    </button>
-  );
-}
-
-import BottomSheet from "../components/BottomSheet";
-import { useRef } from "react";
 
 function SettingsSheet({ open, onClose, user, onUpdated, onLogout }) {
   const [editing, setEditing] = useState(false);

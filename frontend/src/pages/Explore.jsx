@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../lib/api";
 import StackedAvatars from "../components/StackedAvatars";
+import HeaderBrand from "../components/HeaderBrand";
 import { Search } from "lucide-react";
 
 export default function Explore() {
@@ -24,12 +25,7 @@ export default function Explore() {
 
   return (
     <div className="pb-32 fade-in" data-testid="explore-page">
-      <div style={{ background: "#1C1C1E", color: "#fff", padding: "44px 16px 18px" }}>
-        <h1 className="t-large" style={{ color: "#fff" }}>Explore</h1>
-        <p className="t-sub" style={{ color: "#8E8E93" }}>
-          Cities your friends have been to.
-        </p>
-      </div>
+      <HeaderBrand title="Explore" subtitle="Cities your friends have been to." />
 
       <div className="px-4 py-3" style={{ position: "sticky", top: 0, background: "#F2F2F7", zIndex: 5 }}>
         <div style={{ position: "relative" }}>

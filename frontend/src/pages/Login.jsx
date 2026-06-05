@@ -39,7 +39,7 @@ export default function Login() {
       >
         <FreccosLogo size={56} />
         <h1 className="t-large mt-3" style={{ color: "#fff" }}>Freccos</h1>
-        <p className="t-sub" style={{ color: "#8E8E93" }}>Where friends' recommendations live.</p>
+        <p className="t-sub" style={{ color: "#8E8E93" }}>The places your friends actually love.</p>
       </div>
       <form onSubmit={submit} style={{ padding: "28px 16px", flex: 1 }}>
         <h2 className="t-title1 mb-4">Welcome back</h2>
@@ -104,9 +104,9 @@ export default function Login() {
         </button>
 
         <p className="t-sub muted text-center mt-6">
-          Don’t have an invite?{" "}
+          New here?{" "}
           <Link to="/signup" data-testid="login-signup-link" style={{ color: "#0A84FF" }}>
-            Ask a friend
+            Create an account
           </Link>
         </p>
       </form>

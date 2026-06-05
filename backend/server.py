@@ -365,7 +365,7 @@ async def seed_demo_users():
 
 # ----------------------- Models -----------------------
 class RegisterReq(BaseModel):
-    invite_code: str
+    invite_code: Optional[str] = None
     name: str
     email: EmailStr
     password: str
@@ -483,6 +483,30 @@ async def upsert_city(name: str, country: Optional[str] = None,
     return city
 
 
+async def user_travel_stats(user_ids: List[str]) -> dict:
+    """Return {user_id: {'city_count': N, 'country_count': N}} for the given user_ids."""
+    if not user_ids:
+        return {}
+    pipeline = [
+        {"$match": {"user_id": {"$in": user_ids}}},
+        {"$group": {"_id": {"user_id": "$user_id", "city_id": "$city_id"}}},
+        {"$group": {"_id": "$_id.user_id", "city_ids": {"$addToSet": "$_id.city_id"}}},
+    ]
+    rows = await db.recommendations.aggregate(pipeline).to_list(1000)
+    if not rows:
+        return {uid: {"city_count": 0, "country_count": 0} for uid in user_ids}
+    all_city_ids = list({cid for r in rows for cid in r["city_ids"]})
+    city_country = {}
+    async for c in db.cities.find({"id": {"$in": all_city_ids}}, {"_id": 0, "id": 1, "country": 1}):
+        city_country[c["id"]] = c.get("country") or ""
+    out = {uid: {"city_count": 0, "country_count": 0} for uid in user_ids}
+    for r in rows:
+        cids = r["city_ids"]
+        countries = {city_country.get(cid, "") for cid in cids if city_country.get(cid)}
+        out[r["_id"]] = {"city_count": len(cids), "country_count": len(countries)}
+    return out
+
+
 # ----------------------- Auth routes -----------------------
 @api.post("/auth/validate-invite")
 async def validate_invite(req: ValidateInviteReq):
@@ -491,7 +515,7 @@ async def validate_invite(req: ValidateInviteReq):
         return {"valid": False, "message": "Enter an invite code."}
     user = await db.users.find_one({"invite_code": code}, {"_id": 0})
     if not user:
-        return {"valid": False, "message": "This code doesn't look right — ask your friend to share theirs again"}
+        return {"valid": False, "message": "That code doesn't ring a bell — double-check it or skip and join solo"}
     return {"valid": True, "referrer_name": user.get("name"), "referrer_id": user["id"]}
 
 
@@ -501,9 +525,11 @@ async def register(req: RegisterReq, response: Response):
     email = req.email.strip().lower()
     if len(req.password) < 6:
         raise HTTPException(status_code=400, detail="Password should be at least 6 characters")
-    referrer = await db.users.find_one({"invite_code": code}, {"_id": 0})
-    if not referrer:
-        raise HTTPException(status_code=400, detail="This code doesn't look right — ask your friend to share theirs again")
+    referrer = None
+    if code:
+        referrer = await db.users.find_one({"invite_code": code}, {"_id": 0})
+        if not referrer:
+            raise HTTPException(status_code=400, detail="That code doesn't ring a bell — double-check it or skip and join solo")
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Looks like you already have an account — try logging in")
     # generate unique invite code
@@ -513,23 +539,26 @@ async def register(req: RegisterReq, response: Response):
             break
     user_id = str(uuid.uuid4())
     now_iso = iso(now_utc())
+    following = [referrer["id"]] if referrer else []
+    followers = [referrer["id"]] if referrer else []
     user = {
         "id": user_id, "name": req.name.strip(), "email": email,
         "password_hash": hash_password(req.password),
         "profile_photo_url": None, "bio": "",
         "invite_code": new_code,
-        "following": [referrer["id"]],
-        "followers": [referrer["id"]],
+        "following": following,
+        "followers": followers,
         "auth_provider": "password", "google_id": None,
         "created_at": now_iso,
     }
     await db.users.insert_one(user)
-    # mutual follow
-    await db.users.update_one({"id": referrer["id"]}, {
-        "$addToSet": {"following": user_id, "followers": user_id}
-    })
-    await db.follows.insert_one({"follower_id": user_id, "following_id": referrer["id"], "created_at": now_iso})
-    await db.follows.insert_one({"follower_id": referrer["id"], "following_id": user_id, "created_at": now_iso})
+    # mutual follow when invited
+    if referrer:
+        await db.users.update_one({"id": referrer["id"]}, {
+            "$addToSet": {"following": user_id, "followers": user_id}
+        })
+        await db.follows.insert_one({"follower_id": user_id, "following_id": referrer["id"], "created_at": now_iso})
+        await db.follows.insert_one({"follower_id": referrer["id"], "following_id": user_id, "created_at": now_iso})
 
     access = create_access_token(user_id, email)
     refresh = create_refresh_token(user_id)
@@ -698,10 +727,14 @@ async def search_users(q: str = "", user: dict = Depends(current_user)):
         query["name"] = {"$regex": re.escape(q), "$options": "i"}
     cursor = db.users.find(query, {"_id": 0, "password_hash": 0}).limit(50)
     results = []
-    async for u in cursor:
-        results.append(public_user_brief(u) | {
-            "is_following": user["id"] in u.get("followers", []),
-        })
+    raw = [u async for u in cursor]
+    stats = await user_travel_stats([u["id"] for u in raw])
+    for u in raw:
+        s = stats.get(u["id"], {"city_count": 0, "country_count": 0})
+        results.append({**public_user_brief(u),
+                        "is_following": user["id"] in u.get("followers", []),
+                        "city_count": s["city_count"],
+                        "country_count": s["country_count"]})
     return results
 
 
@@ -828,10 +861,17 @@ async def explore_city_friends(city_id: str, user: dict = Depends(current_user))
         return []
     user_ids = [a["_id"] for a in agg]
     users = {u["id"]: u async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "password_hash": 0})}
-    return [
-        {**public_user_brief(users[a["_id"]]), "rec_count": a["count"]}
-        for a in agg if a["_id"] in users
-    ]
+    stats = await user_travel_stats(user_ids)
+    out = []
+    for a in agg:
+        if a["_id"] not in users:
+            continue
+        s = stats.get(a["_id"], {"city_count": 0, "country_count": 0})
+        out.append({**public_user_brief(users[a["_id"]]),
+                    "rec_count": a["count"],
+                    "city_count": s["city_count"],
+                    "country_count": s["country_count"]})
+    return out
 
 
 # ----------------------- Recommendations -----------------------
@@ -1117,6 +1157,9 @@ async def check_rec(city_id: str, req: CheckRecReq, user: dict = Depends(current
 
 
 # ----------------------- Google Places proxy -----------------------
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://freccos.com")
+
+
 @api.get("/places/autocomplete")
 async def places_autocomplete(q: str = Query(..., min_length=1),
                               user: dict = Depends(current_user)):
@@ -1129,6 +1172,8 @@ async def places_autocomplete(q: str = Query(..., min_length=1),
             headers={
                 "Content-Type": "application/json",
                 "X-Goog-Api-Key": GOOGLE_PLACES_KEY,
+                # Pass a Referer so the key's HTTP referer restriction (if any) matches.
+                "Referer": FRONTEND_URL,
             },
             json={"input": q},
             timeout=10,
@@ -1164,6 +1209,7 @@ async def places_details(place_id: str, user: dict = Depends(current_user)):
             headers={
                 "X-Goog-Api-Key": GOOGLE_PLACES_KEY,
                 "X-Goog-FieldMask": "id,displayName,formattedAddress,addressComponents,location",
+                "Referer": FRONTEND_URL,
             },
             timeout=10,
         )

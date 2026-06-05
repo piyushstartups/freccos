@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Outlet, useNavigate } from "react-router-dom";
 import BottomNav from "../components/BottomNav";
 import Fab from "../components/Fab";
 import AddRecommendationSheet from "../components/AddRecommendationSheet";
@@ -9,13 +9,14 @@ export default function MainLayout() {
   const [recOpen, setRecOpen] = useState(false);
   const [bucketOpen, setBucketOpen] = useState(false);
   const nav = useNavigate();
-  const location = useLocation();
   return (
     <>
       <Outlet />
       <Fab
+        // "Add a recommendation" and "Add a trip" both open the rec sheet —
+        // a trip in Freccos = a city you've been to, which is exactly a recommendation.
         onAddRec={() => setRecOpen(true)}
-        onAddTrip={() => { nav("/me"); }}
+        onAddTrip={() => setRecOpen(true)}
         onAddBucket={() => setBucketOpen(true)}
       />
       <BottomNav />
@@ -23,8 +24,9 @@ export default function MainLayout() {
         open={recOpen}
         onClose={() => setRecOpen(false)}
         onCreated={() => {
-          // Best-effort refresh of current view by reloading the route
           window.dispatchEvent(new Event("freccos:refresh"));
+          // Navigate to Profile so user sees their new "trip"
+          nav("/me");
         }}
       />
       <AddBucketListSheet

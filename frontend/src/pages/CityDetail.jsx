@@ -85,12 +85,18 @@ export default function CityDetail() {
               <Link
                 key={f.id}
                 to={`/user/${f.id}?city=${cityId}`}
-                style={{ textAlign: "center", textDecoration: "none", color: "#fff", minWidth: 64 }}
+                style={{ textAlign: "center", textDecoration: "none", color: "#fff", minWidth: 72 }}
                 data-testid={`friend-strip-${f.id}`}
               >
                 <Avatar user={f} size={48} />
                 <div className="t-cap mt-1" style={{ color: "#fff" }}>{f.name?.split(" ")[0]}</div>
-                <div className="t-cap" style={{ color: "#8E8E93" }}>{f.rec_count} {f.rec_count === 1 ? "rec" : "recs"}</div>
+                {typeof f.city_count === "number" ? (
+                  <div className="t-cap" style={{ color: "#8E8E93", fontSize: 10 }}>
+                    {f.city_count} {f.city_count === 1 ? "city" : "cities"} · {f.country_count} {f.country_count === 1 ? "country" : "countries"}
+                  </div>
+                ) : (
+                  <div className="t-cap" style={{ color: "#8E8E93" }}>{f.rec_count} {f.rec_count === 1 ? "rec" : "recs"}</div>
+                )}
               </Link>
             ))}
           </div>

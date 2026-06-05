@@ -5,7 +5,7 @@ import { Compass, Users, Briefcase, User } from "lucide-react";
 const items = [
   { to: "/explore", label: "Explore", icon: Compass, testid: "nav-explore" },
   { to: "/friends", label: "Friends", icon: Users, testid: "nav-friends" },
-  { to: "/trips", label: "Trips", icon: Briefcase, testid: "nav-trips" },
+  { to: "/trips", label: "Bucket list", icon: Briefcase, testid: "nav-trips" },
   { to: "/me", label: "Profile", icon: User, testid: "nav-profile" },
 ];
 

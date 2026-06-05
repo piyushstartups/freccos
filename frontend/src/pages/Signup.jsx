@@ -24,6 +24,7 @@ export default function Signup() {
   const fileRef = useRef(null);
 
   const validate = async () => {
+    if (!code) return;
     setValidating(true); setErr("");
     try {
       const { data } = await api.post("/auth/validate-invite", { code });
@@ -35,8 +36,13 @@ export default function Signup() {
   };
 
   const goStep2 = async () => {
-    if (!codeStatus?.valid) {
+    // Code is optional now — proceed regardless. If user typed one, validate first.
+    if (code && !codeStatus) {
       await validate();
+      return;
+    }
+    if (code && codeStatus && !codeStatus.valid) {
+      // user must clear it or fix it
       return;
     }
     setStep(2);
@@ -46,7 +52,9 @@ export default function Signup() {
     e?.preventDefault();
     setErr(""); setBusy(true);
     try {
-      await register({ invite_code: code, name, email: email.trim(), password: pw });
+      const payload = { name, email: email.trim(), password: pw };
+      if (code && codeStatus?.valid) payload.invite_code = code;
+      await register(payload);
       setStep(3);
     } catch (e) {
       setErr(formatApiErrorDetail(e.response?.data?.detail) || e.message);
@@ -87,7 +95,7 @@ export default function Signup() {
         style={{ background: "#1C1C1E", color: "#fff", padding: "40px 24px 28px", textAlign: "center" }}
       >
         <FreccosLogo size={48} />
-        <h1 className="t-title1 mt-3" style={{ color: "#fff" }}>Join Freccos</h1>
+        <h1 className="t-title1 mt-3" style={{ color: "#fff" }}>Join your friends on Freccos</h1>
         <p className="t-cap" style={{ color: "#8E8E93" }}>Step {step} of 3</p>
         <div style={{ display: "flex", gap: 4, justifyContent: "center", marginTop: 10 }}>
           {[1, 2, 3].map((i) => (
@@ -102,22 +110,24 @@ export default function Signup() {
 
       {step === 1 && (
         <div style={{ padding: "28px 16px", flex: 1 }} className="fade-in">
-          <h2 className="t-title2 mb-1">Enter your invite code</h2>
-          <p className="t-sub muted mb-4">Freccos is invite-only. A friend shared a code with you.</p>
+          <h2 className="t-title2 mb-1">Got an invite from a friend?</h2>
+          <p className="t-sub muted mb-4">
+            Drop in their code to auto-follow each other — or skip and join solo.
+          </p>
           <input
             data-testid="signup-invite"
             className="ios-input"
             value={code}
             onChange={(e) => { setCode(e.target.value.toUpperCase()); setCodeStatus(null); setErr(""); }}
             onBlur={() => code && validate()}
-            placeholder="FRECCOS1"
+            placeholder="FRIEND'S CODE (optional)"
             maxLength={12}
             style={{ letterSpacing: 2, textAlign: "center", fontWeight: 600 }}
           />
           {codeStatus?.valid && (
             <p className="t-sub mt-2" style={{ color: "#30D158" }} data-testid="signup-invite-ok">
               <Check size={14} style={{ display: "inline", marginRight: 4 }} />
-              Invited by {codeStatus.referrer_name} — you’ll auto-follow each other.
+              Invited by {codeStatus.referrer_name} — you'll auto-follow each other.
             </p>
           )}
           {err && <p data-testid="signup-error" className="t-sub mt-2" style={{ color: "#FF453A" }}>{err}</p>}
@@ -125,10 +135,10 @@ export default function Signup() {
             data-testid="signup-step1-continue"
             className="btn-pill btn-primary w-full mt-5"
             onClick={goStep2}
-            disabled={!code || validating}
+            disabled={validating}
           >
             {validating ? <Loader2 size={18} className="animate-spin" /> : null}
-            Continue
+            {code ? "Continue" : "Skip & continue"}
           </button>
           <p className="t-sub muted text-center mt-4">
             Have an account?{" "}

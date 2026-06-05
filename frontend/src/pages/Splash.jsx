@@ -24,12 +24,12 @@ export default function Splash() {
     >
       <FreccosLogo />
       <h1 className="t-large mt-5" style={{ color: "#fff" }}>Freccos</h1>
-      <p className="t-sub mt-1" style={{ color: "#8E8E93" }}>Where friends' recommendations live.</p>
+      <p className="t-sub mt-1" style={{ color: "#8E8E93" }}>The places your friends actually love.</p>
     </div>
   );
 }
 
-export function FreccosLogo({ size = 64, color = "#0A84FF" }) {
+export function FreccosLogo({ size = 64, color = "#6C5CE7" }) {
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" fill="none" aria-hidden>
       <circle cx="22" cy="26" r="13" fill={color} opacity="0.45" />

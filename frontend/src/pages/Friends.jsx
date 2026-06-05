@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../lib/api";
 import Avatar from "../components/Avatar";
+import HeaderBrand from "../components/HeaderBrand";
 import { Search, UserPlus, UserCheck } from "lucide-react";
 import { toast } from "sonner";
 
@@ -38,10 +39,7 @@ export default function Friends() {
 
   return (
     <div className="pb-32 fade-in" data-testid="friends-page">
-      <div style={{ background: "#1C1C1E", color: "#fff", padding: "44px 16px 16px" }}>
-        <h1 className="t-large" style={{ color: "#fff" }}>Friends</h1>
-        <p className="t-sub" style={{ color: "#8E8E93" }}>The people behind your recommendations.</p>
-      </div>
+      <HeaderBrand title="Friends" subtitle="The people behind your recommendations." />
       <div className="px-4 py-3" style={{ position: "sticky", top: 0, background: "#F2F2F7", zIndex: 5 }}>
         <div style={{ position: "relative" }}>
           <Search size={16}
@@ -84,13 +82,20 @@ export default function Friends() {
 }
 
 function UserRow({ u, onToggle }) {
+  const stats = (typeof u.city_count === "number")
+    ? `${u.city_count} ${u.city_count === 1 ? "city" : "cities"} · ${u.country_count} ${u.country_count === 1 ? "country" : "countries"}`
+    : null;
   return (
     <div className="list-row">
       <Link to={`/user/${u.id}`} className="flex items-center gap-3" style={{ textDecoration: "none", color: "inherit", flex: 1 }} data-testid={`user-link-${u.id}`}>
         <Avatar user={u} size={42} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="t-title3" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.name}</div>
-          {u.bio && <div className="t-cap muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.bio}</div>}
+          {stats && (
+            <div className="t-cap muted" data-testid={`user-stats-${u.id}`}
+              style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{stats}</div>
+          )}
+          {!stats && u.bio && <div className="t-cap muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.bio}</div>}
         </div>
       </Link>
       <button
