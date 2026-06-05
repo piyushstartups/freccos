@@ -1,55 +1,81 @@
-import { useEffect } from "react";
-import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
-import { HOME } from "@/constants/testIds";
+import React, { useEffect } from "react";
+import "./index.css";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { Toaster } from "sonner";
+import { AuthProvider, useAuth } from "./lib/auth";
+import Splash from "./pages/Splash";
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
+import ForgotPassword from "./pages/ForgotPassword";
+import AuthCallback from "./pages/AuthCallback";
+import Explore from "./pages/Explore";
+import CityDetail from "./pages/CityDetail";
+import Friends from "./pages/Friends";
+import FriendProfile from "./pages/FriendProfile";
+import TripPlans from "./pages/TripPlans";
+import TripDetail from "./pages/TripDetail";
+import MyProfile from "./pages/MyProfile";
+import MainLayout from "./pages/MainLayout";
+import PWAInstallBanner from "./components/PWAInstallBanner";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+function ProtectedRoute({ children }) {
+  const { user, loading } = useAuth();
+  if (loading || user === null) {
+    return (
+      <div className="frec-shell flex items-center justify-center" style={{ minHeight: "100vh" }}>
+        <p className="muted">Loading...</p>
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/login" replace />;
+  return children;
+}
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
+function AppRoutes() {
+  const location = useLocation();
+  // Detect OAuth callback in URL hash synchronously
+  if (location.hash?.includes("session_id=") || (typeof window !== "undefined" && window.location.hash?.includes("session_id="))) {
+    return <AuthCallback />;
+  }
   return (
-    <div>
-      <header className="App-header">
-        <a
-          data-testid={HOME.emergentLink}
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
+    <Routes>
+      <Route path="/" element={<Splash />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Signup />} />
+      <Route path="/forgot" element={<ForgotPassword />} />
+      <Route element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
+        <Route path="/explore" element={<Explore />} />
+        <Route path="/city/:cityId" element={<CityDetail />} />
+        <Route path="/friends" element={<Friends />} />
+        <Route path="/user/:userId" element={<FriendProfile />} />
+        <Route path="/trips" element={<TripPlans />} />
+        <Route path="/trips/:cityId" element={<TripDetail />} />
+        <Route path="/me" element={<MyProfile />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
-};
+}
 
 function App() {
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      // Service worker registration deferred until load to avoid blocking
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/sw.js").catch(() => {});
+      });
+    }
+  }, []);
   return (
-    <div className="App">
+    <AuthProvider>
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
+        <div className="frec-shell">
+          <PWAInstallBanner />
+          <AppRoutes />
+          <Toaster position="top-center" closeButton richColors />
+        </div>
       </BrowserRouter>
-    </div>
+    </AuthProvider>
   );
 }
 

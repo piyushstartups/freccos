@@ -1,89 +1,1214 @@
-from fastapi import FastAPI, APIRouter
 from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
-import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
-import uuid
-from datetime import datetime, timezone
-
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
+import os
+import re
+import uuid
+import json
+import string
+import random
+import secrets
+import logging
+import unicodedata
+from datetime import datetime, timezone, timedelta
+from typing import Optional, List
+
+import bcrypt
+import jwt
+import requests
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, UploadFile, File, Form, Query, Header
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, EmailStr, Field
+from motor.motor_asyncio import AsyncIOMotorClient
+from starlette.middleware.cors import CORSMiddleware
+
+
+# ----------------------- Config -----------------------
+JWT_SECRET = os.environ["JWT_SECRET"]
+JWT_ALGORITHM = "HS256"
+ACCESS_TOKEN_TTL_MIN = 60 * 24 * 7  # 7 days — convenient for PWA
+REFRESH_TOKEN_TTL_DAYS = 30
+EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
+GOOGLE_PLACES_KEY = os.environ.get("GOOGLE_PLACES_API_KEY", "")
+APP_NAME = os.environ.get("APP_NAME", "freccos")
+STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
+CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o.strip()]
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger("freccos")
+
+# ----------------------- Mongo -----------------------
+mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
-
-# Create the main app without a prefix
-app = FastAPI()
-
-# Create a router with the /api prefix
-api_router = APIRouter(prefix="/api")
+db = client[os.environ["DB_NAME"]]
 
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+# ----------------------- Helpers -----------------------
+def now_utc():
+    return datetime.now(timezone.utc)
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
 
-# Add your routes to the router instead of directly to app
-@api_router.get("/")
-async def root():
-    return {"message": "Hello World"}
+def iso(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).isoformat()
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-    
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
-    return status_checks
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
-# Include the router in the main app
-app.include_router(api_router)
+
+def verify_password(plain: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
+
+
+def create_access_token(user_id: str, email: str) -> str:
+    payload = {
+        "sub": user_id, "email": email,
+        "exp": now_utc() + timedelta(minutes=ACCESS_TOKEN_TTL_MIN),
+        "type": "access",
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def create_refresh_token(user_id: str) -> str:
+    payload = {
+        "sub": user_id,
+        "exp": now_utc() + timedelta(days=REFRESH_TOKEN_TTL_DAYS),
+        "type": "refresh",
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def set_auth_cookies(response: Response, access: str, refresh: str):
+    # samesite none + secure True for cross-site cookie use (frontend served on different subdomain)
+    response.set_cookie("access_token", access, httponly=True, secure=True, samesite="none",
+                        max_age=ACCESS_TOKEN_TTL_MIN * 60, path="/")
+    response.set_cookie("refresh_token", refresh, httponly=True, secure=True, samesite="none",
+                        max_age=REFRESH_TOKEN_TTL_DAYS * 86400, path="/")
+
+
+def clear_auth_cookies(response: Response):
+    for k in ("access_token", "refresh_token", "session_token"):
+        response.delete_cookie(k, path="/")
+
+
+def slugify(text: str) -> str:
+    text = unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode("ascii")
+    text = re.sub(r"[^a-z0-9]+", "", text.lower())
+    return text
+
+
+def gen_invite_code() -> str:
+    alphabet = string.ascii_uppercase + string.digits
+    return "".join(random.choices(alphabet, k=8))
+
+
+COUNTRY_FLAGS = {
+    "IN": "🇮🇳", "US": "🇺🇸", "GB": "🇬🇧", "FR": "🇫🇷", "IT": "🇮🇹", "ES": "🇪🇸",
+    "DE": "🇩🇪", "JP": "🇯🇵", "CN": "🇨🇳", "KR": "🇰🇷", "TH": "🇹🇭", "VN": "🇻🇳",
+    "ID": "🇮🇩", "AU": "🇦🇺", "NZ": "🇳🇿", "CA": "🇨🇦", "MX": "🇲🇽", "BR": "🇧🇷",
+    "AR": "🇦🇷", "AE": "🇦🇪", "TR": "🇹🇷", "GR": "🇬🇷", "PT": "🇵🇹", "NL": "🇳🇱",
+    "BE": "🇧🇪", "CH": "🇨🇭", "SE": "🇸🇪", "NO": "🇳🇴", "DK": "🇩🇰", "FI": "🇫🇮",
+    "IE": "🇮🇪", "ZA": "🇿🇦", "EG": "🇪🇬", "MA": "🇲🇦", "SG": "🇸🇬", "MY": "🇲🇾",
+    "PH": "🇵🇭", "LK": "🇱🇰", "NP": "🇳🇵", "BT": "🇧🇹", "MV": "🇲🇻",
+}
+
+
+def flag_for_country_code(cc: str) -> str:
+    if not cc:
+        return "🌍"
+    cc = cc.upper()
+    if cc in COUNTRY_FLAGS:
+        return COUNTRY_FLAGS[cc]
+    # Construct flag emoji from ISO country code regional indicators
+    try:
+        return "".join(chr(0x1F1E6 + ord(c) - ord("A")) for c in cc if c.isalpha())
+    except Exception:
+        return "🌍"
+
+
+# ----------------------- Storage -----------------------
+storage_key: Optional[str] = None
+
+
+def init_storage():
+    global storage_key
+    if storage_key:
+        return storage_key
+    try:
+        resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
+        resp.raise_for_status()
+        storage_key = resp.json()["storage_key"]
+        return storage_key
+    except Exception as e:
+        logger.error(f"Storage init failed: {e}")
+        return None
+
+
+def put_object(path: str, data: bytes, content_type: str) -> dict:
+    key = init_storage()
+    if not key:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    resp = requests.put(
+        f"{STORAGE_URL}/objects/{path}",
+        headers={"X-Storage-Key": key, "Content-Type": content_type},
+        data=data, timeout=120,
+    )
+    if resp.status_code == 403:
+        # storage_key may have expired; reset and retry once
+        globals()["storage_key"] = None
+        key = init_storage()
+        resp = requests.put(
+            f"{STORAGE_URL}/objects/{path}",
+            headers={"X-Storage-Key": key, "Content-Type": content_type},
+            data=data, timeout=120,
+        )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_object(path: str):
+    key = init_storage()
+    if not key:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    resp = requests.get(f"{STORAGE_URL}/objects/{path}",
+                       headers={"X-Storage-Key": key}, timeout=60)
+    if resp.status_code == 403:
+        globals()["storage_key"] = None
+        key = init_storage()
+        resp = requests.get(f"{STORAGE_URL}/objects/{path}",
+                           headers={"X-Storage-Key": key}, timeout=60)
+    resp.raise_for_status()
+    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
+
+
+# ----------------------- Auth helpers -----------------------
+async def get_user_by_id(user_id: str) -> Optional[dict]:
+    return await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+
+
+async def _resolve_token_user(request: Request) -> Optional[dict]:
+    # 1. JWT cookie
+    token = request.cookies.get("access_token")
+    if not token:
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            token = auth[7:]
+    if token:
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            if payload.get("type") == "access":
+                user = await get_user_by_id(payload["sub"])
+                if user:
+                    return user
+        except jwt.PyJWTError:
+            pass
+    # 2. Emergent Google session_token cookie
+    sess_token = request.cookies.get("session_token")
+    if sess_token:
+        sess = await db.user_sessions.find_one({"session_token": sess_token}, {"_id": 0})
+        if sess:
+            exp = sess.get("expires_at")
+            if isinstance(exp, str):
+                try:
+                    exp = datetime.fromisoformat(exp)
+                except Exception:
+                    exp = None
+            if exp is not None:
+                if exp.tzinfo is None:
+                    exp = exp.replace(tzinfo=timezone.utc)
+                if exp > now_utc():
+                    user = await get_user_by_id(sess["user_id"])
+                    if user:
+                        return user
+    return None
+
+
+async def current_user(request: Request) -> dict:
+    user = await _resolve_token_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+
+async def optional_user(request: Request) -> Optional[dict]:
+    try:
+        return await _resolve_token_user(request)
+    except Exception:
+        return None
+
+
+# ----------------------- FastAPI app -----------------------
+app = FastAPI(title="Freccos API")
+api = APIRouter(prefix="/api")
+
+
+@app.on_event("startup")
+async def startup():
+    # Indexes
+    await db.users.create_index("email", unique=True)
+    await db.users.create_index("invite_code", unique=True)
+    await db.users.create_index("id", unique=True)
+    await db.cities.create_index("id", unique=True)
+    await db.cities.create_index([("name_lower", 1), ("country_code", 1)], unique=True)
+    await db.recommendations.create_index("id", unique=True)
+    await db.recommendations.create_index([("user_id", 1), ("city_id", 1)])
+    await db.recommendations.create_index([("city_id", 1)])
+    await db.follows.create_index([("follower_id", 1), ("following_id", 1)], unique=True)
+    await db.trip_plans.create_index([("user_id", 1), ("city_id", 1)], unique=True)
+    await db.user_sessions.create_index("session_token")
+    await db.password_reset_tokens.create_index("expires_at", expireAfterSeconds=0)
+    # Init storage
+    init_storage()
+    # Seed demo users
+    await seed_demo_users()
+
+
+async def seed_demo_users():
+    existing = await db.users.find_one({"email": "priya@freccos.com"})
+    if existing:
+        return
+    priya_id = str(uuid.uuid4())
+    arjun_id = str(uuid.uuid4())
+    sara_id = str(uuid.uuid4())
+    pw = hash_password("Demo1234!")
+    now_iso = iso(now_utc())
+    priya = {
+        "id": priya_id, "name": "Priya Sharma", "email": "priya@freccos.com",
+        "password_hash": pw, "profile_photo_url": None,
+        "bio": "Loves quiet beaches and great coffee.",
+        "invite_code": "FRECCOS1",
+        "following": [arjun_id, sara_id],
+        "followers": [arjun_id, sara_id],
+        "auth_provider": "password", "google_id": None,
+        "created_at": now_iso,
+    }
+    arjun = {
+        "id": arjun_id, "name": "Arjun Mehta", "email": "arjun@freccos.com",
+        "password_hash": pw, "profile_photo_url": None,
+        "bio": "Food first. Always a window seat.",
+        "invite_code": gen_invite_code(),
+        "following": [priya_id, sara_id],
+        "followers": [priya_id, sara_id],
+        "auth_provider": "password", "google_id": None,
+        "created_at": now_iso,
+    }
+    sara = {
+        "id": sara_id, "name": "Sara Iyer", "email": "sara@freccos.com",
+        "password_hash": pw, "profile_photo_url": None,
+        "bio": "Weekend wanderer. Mountains over malls.",
+        "invite_code": gen_invite_code(),
+        "following": [priya_id, arjun_id],
+        "followers": [priya_id, arjun_id],
+        "auth_provider": "password", "google_id": None,
+        "created_at": now_iso,
+    }
+    await db.users.insert_many([priya, arjun, sara])
+    for a, b in [(priya_id, arjun_id), (priya_id, sara_id), (arjun_id, sara_id)]:
+        await db.follows.insert_one({"follower_id": a, "following_id": b, "created_at": now_iso})
+        await db.follows.insert_one({"follower_id": b, "following_id": a, "created_at": now_iso})
+
+    # Seed cities
+    alibag = {"id": str(uuid.uuid4()), "name": "Alibag", "name_lower": "alibag",
+              "country": "India", "country_code": "IN", "flag_emoji": "🇮🇳"}
+    goa = {"id": str(uuid.uuid4()), "name": "Goa", "name_lower": "goa",
+           "country": "India", "country_code": "IN", "flag_emoji": "🇮🇳"}
+    paris = {"id": str(uuid.uuid4()), "name": "Paris", "name_lower": "paris",
+             "country": "France", "country_code": "FR", "flag_emoji": "🇫🇷"}
+    tokyo = {"id": str(uuid.uuid4()), "name": "Tokyo", "name_lower": "tokyo",
+             "country": "Japan", "country_code": "JP", "flag_emoji": "🇯🇵"}
+    await db.cities.insert_many([alibag, goa, paris, tokyo])
+
+    # Seed recs
+    seed_recs = [
+        # Alibag — overlap on "Sundowner Cafe" between Priya & Arjun (Top Pick)
+        (priya_id, alibag["id"], "Sundowner Cafe", "food",
+         "Get there for sunset — order the prawns and the lemon iced tea.", None),
+        (arjun_id, alibag["id"], "Sundowner Cafe", "food",
+         "Don’t skip the calamari. Sit on the deck.", None),
+        (sara_id, alibag["id"], "Mango House Villa", "stay",
+         "Lovely garden, hosts are wonderful. Book the upstairs room.", None),
+        (priya_id, alibag["id"], "Kashid Beach", "experience",
+         "Less crowded than Alibag main beach. Go early morning.", None),
+        # Goa
+        (priya_id, goa["id"], "Gunpowder", "food",
+         "South Indian done right. Try the appam + stew.", None),
+        (arjun_id, goa["id"], "Thalassa", "experience",
+         "Pricey but the cliffside views at sunset are unbeatable.", None),
+        # Paris
+        (priya_id, paris["id"], "Le Comptoir du Relais", "food",
+         "Cozy bistro near Odéon — go for lunch, it’s easier to get in.", None),
+        (sara_id, paris["id"], "Hotel Henriette", "stay",
+         "Tucked away in the 13th — the breakfast nook is everything.", None),
+        # Tokyo
+        (arjun_id, tokyo["id"], "Sushi Saito", "food",
+         "Reserve months in advance. Worth every yen.", None),
+    ]
+    for uid, cid, name, cat, note, photo in seed_recs:
+        await db.recommendations.insert_one({
+            "id": str(uuid.uuid4()),
+            "user_id": uid, "city_id": cid,
+            "place_name": name, "place_id": None,
+            "place_address": None,
+            "place_name_normalized": slugify(name),
+            "category": cat, "note": note,
+            "photo_url": photo,
+            "created_at": now_iso,
+        })
+    logger.info("Seeded demo users + recommendations.")
+
+
+# ----------------------- Models -----------------------
+class RegisterReq(BaseModel):
+    invite_code: str
+    name: str
+    email: EmailStr
+    password: str
+
+
+class LoginReq(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class ValidateInviteReq(BaseModel):
+    code: str
+
+
+class ForgotPasswordReq(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordReq(BaseModel):
+    token: str
+    new_password: str
+
+
+class GoogleSessionReq(BaseModel):
+    session_id: str
+
+
+class UpdateProfileReq(BaseModel):
+    name: Optional[str] = None
+    bio: Optional[str] = None
+    profile_photo_url: Optional[str] = None
+
+
+class RecCreateReq(BaseModel):
+    place_name: str
+    category: str  # food|experience|stay|getting_around
+    city_name: Optional[str] = None
+    country: Optional[str] = None
+    country_code: Optional[str] = None
+    city_id: Optional[str] = None
+    place_id: Optional[str] = None
+    place_address: Optional[str] = None
+    note: Optional[str] = None
+    photo_url: Optional[str] = None
+
+
+class RecUpdateReq(BaseModel):
+    place_name: Optional[str] = None
+    category: Optional[str] = None
+    note: Optional[str] = None
+    photo_url: Optional[str] = None
+
+
+class BucketListReq(BaseModel):
+    city_id: Optional[str] = None
+    city_name: Optional[str] = None
+    country: Optional[str] = None
+    country_code: Optional[str] = None
+
+
+class SaveRecReq(BaseModel):
+    recommendation_id: str  # any rec representing the place to save
+
+
+class CheckRecReq(BaseModel):
+    recommendation_id: str
+    checked: bool
+
+
+# ----------------------- Helpers — users/cities -----------------------
+def public_user(u: dict) -> dict:
+    return {
+        "id": u["id"],
+        "name": u.get("name"),
+        "email": u.get("email"),
+        "bio": u.get("bio"),
+        "profile_photo_url": u.get("profile_photo_url"),
+        "invite_code": u.get("invite_code"),
+        "following": u.get("following", []),
+        "followers": u.get("followers", []),
+        "auth_provider": u.get("auth_provider"),
+    }
+
+
+def public_user_brief(u: dict) -> dict:
+    return {
+        "id": u["id"],
+        "name": u.get("name"),
+        "bio": u.get("bio"),
+        "profile_photo_url": u.get("profile_photo_url"),
+    }
+
+
+async def upsert_city(name: str, country: Optional[str] = None,
+                     country_code: Optional[str] = None) -> dict:
+    if not name:
+        raise HTTPException(status_code=400, detail="City name required")
+    name = name.strip()
+    name_lower = name.lower()
+    cc = (country_code or "").upper() or None
+    existing = await db.cities.find_one(
+        {"name_lower": name_lower, "country_code": cc}, {"_id": 0}
+    )
+    if existing:
+        return existing
+    city = {
+        "id": str(uuid.uuid4()),
+        "name": name, "name_lower": name_lower,
+        "country": country or "",
+        "country_code": cc or "",
+        "flag_emoji": flag_for_country_code(cc) if cc else "🌍",
+    }
+    await db.cities.insert_one(city)
+    city.pop("_id", None)
+    return city
+
+
+# ----------------------- Auth routes -----------------------
+@api.post("/auth/validate-invite")
+async def validate_invite(req: ValidateInviteReq):
+    code = (req.code or "").strip().upper()
+    if not code:
+        return {"valid": False, "message": "Enter an invite code."}
+    user = await db.users.find_one({"invite_code": code}, {"_id": 0})
+    if not user:
+        return {"valid": False, "message": "This code doesn't look right — ask your friend to share theirs again"}
+    return {"valid": True, "referrer_name": user.get("name"), "referrer_id": user["id"]}
+
+
+@api.post("/auth/register")
+async def register(req: RegisterReq, response: Response):
+    code = (req.invite_code or "").strip().upper()
+    email = req.email.strip().lower()
+    if len(req.password) < 6:
+        raise HTTPException(status_code=400, detail="Password should be at least 6 characters")
+    referrer = await db.users.find_one({"invite_code": code}, {"_id": 0})
+    if not referrer:
+        raise HTTPException(status_code=400, detail="This code doesn't look right — ask your friend to share theirs again")
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=400, detail="Looks like you already have an account — try logging in")
+    # generate unique invite code
+    for _ in range(8):
+        new_code = gen_invite_code()
+        if not await db.users.find_one({"invite_code": new_code}):
+            break
+    user_id = str(uuid.uuid4())
+    now_iso = iso(now_utc())
+    user = {
+        "id": user_id, "name": req.name.strip(), "email": email,
+        "password_hash": hash_password(req.password),
+        "profile_photo_url": None, "bio": "",
+        "invite_code": new_code,
+        "following": [referrer["id"]],
+        "followers": [referrer["id"]],
+        "auth_provider": "password", "google_id": None,
+        "created_at": now_iso,
+    }
+    await db.users.insert_one(user)
+    # mutual follow
+    await db.users.update_one({"id": referrer["id"]}, {
+        "$addToSet": {"following": user_id, "followers": user_id}
+    })
+    await db.follows.insert_one({"follower_id": user_id, "following_id": referrer["id"], "created_at": now_iso})
+    await db.follows.insert_one({"follower_id": referrer["id"], "following_id": user_id, "created_at": now_iso})
+
+    access = create_access_token(user_id, email)
+    refresh = create_refresh_token(user_id)
+    set_auth_cookies(response, access, refresh)
+    user.pop("password_hash", None)
+    return public_user(user)
+
+
+@api.post("/auth/login")
+async def login(req: LoginReq, response: Response):
+    email = req.email.strip().lower()
+    user = await db.users.find_one({"email": email})
+    if not user or not user.get("password_hash") or not verify_password(req.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="That password doesn't match — want to reset it?")
+    access = create_access_token(user["id"], email)
+    refresh = create_refresh_token(user["id"])
+    set_auth_cookies(response, access, refresh)
+    user.pop("_id", None); user.pop("password_hash", None)
+    return public_user(user)
+
+
+@api.post("/auth/logout")
+async def logout(request: Request, response: Response):
+    sess_token = request.cookies.get("session_token")
+    if sess_token:
+        await db.user_sessions.delete_one({"session_token": sess_token})
+    clear_auth_cookies(response)
+    return {"ok": True}
+
+
+@api.get("/auth/me")
+async def me(user: dict = Depends(current_user)):
+    return public_user(user)
+
+
+@api.post("/auth/forgot-password")
+async def forgot_password(req: ForgotPasswordReq):
+    email = req.email.strip().lower()
+    user = await db.users.find_one({"email": email})
+    if user:
+        token = secrets.token_urlsafe(32)
+        await db.password_reset_tokens.insert_one({
+            "token": token, "user_id": user["id"],
+            "expires_at": now_utc() + timedelta(hours=1),
+            "used": False,
+        })
+        # STUBBED: log the reset link instead of emailing
+        logger.info(f"[forgot-password] reset link for {email}: token={token}")
+    # always return success to avoid email enumeration
+    return {"ok": True, "message": "If that email exists, we just sent a reset link."}
+
+
+@api.post("/auth/reset-password")
+async def reset_password(req: ResetPasswordReq):
+    tok = await db.password_reset_tokens.find_one({"token": req.token})
+    if not tok or tok.get("used"):
+        raise HTTPException(status_code=400, detail="This reset link isn't valid anymore.")
+    exp = tok.get("expires_at")
+    if isinstance(exp, str):
+        exp = datetime.fromisoformat(exp)
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    if exp < now_utc():
+        raise HTTPException(status_code=400, detail="This reset link has expired.")
+    await db.users.update_one({"id": tok["user_id"]},
+                              {"$set": {"password_hash": hash_password(req.new_password)}})
+    await db.password_reset_tokens.update_one({"_id": tok["_id"]}, {"$set": {"used": True}})
+    return {"ok": True}
+
+
+@api.post("/auth/google/session")
+async def google_session(req: GoogleSessionReq, response: Response):
+    # Exchange session_id with Emergent
+    try:
+        r = requests.get(
+            "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+            headers={"X-Session-ID": req.session_id}, timeout=15,
+        )
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        logger.error(f"Google session exchange failed: {e}")
+        raise HTTPException(status_code=400, detail="Couldn't sign in with Google. Please try again.")
+    email = (data.get("email") or "").strip().lower()
+    name = data.get("name") or email.split("@")[0]
+    picture = data.get("picture")
+    session_token = data.get("session_token")
+    if not email or not session_token:
+        raise HTTPException(status_code=400, detail="Google response was incomplete.")
+    now_iso = iso(now_utc())
+    user = await db.users.find_one({"email": email})
+    if not user:
+        # First Google sign-in — auto-create user with no invite (Google login is its own onboarding gate)
+        for _ in range(8):
+            new_code = gen_invite_code()
+            if not await db.users.find_one({"invite_code": new_code}):
+                break
+        user_id = str(uuid.uuid4())
+        user = {
+            "id": user_id, "name": name, "email": email,
+            "password_hash": None, "profile_photo_url": picture, "bio": "",
+            "invite_code": new_code, "following": [], "followers": [],
+            "auth_provider": "google", "google_id": data.get("id"),
+            "created_at": now_iso,
+        }
+        await db.users.insert_one(user)
+    else:
+        # mark as both if user had password before
+        provider = user.get("auth_provider", "password")
+        if provider != "google" and provider != "both":
+            await db.users.update_one({"id": user["id"]}, {"$set": {"auth_provider": "both", "google_id": data.get("id")}})
+
+    # Store session token row
+    await db.user_sessions.insert_one({
+        "user_id": user["id"], "session_token": session_token,
+        "expires_at": now_utc() + timedelta(days=7),
+        "created_at": now_iso,
+    })
+    # Set both Emergent session cookie and our own JWT cookies so the rest of the app works seamlessly
+    response.set_cookie("session_token", session_token, httponly=True, secure=True, samesite="none",
+                        max_age=7 * 86400, path="/")
+    access = create_access_token(user["id"], email)
+    refresh = create_refresh_token(user["id"])
+    set_auth_cookies(response, access, refresh)
+    user.pop("_id", None); user.pop("password_hash", None)
+    return public_user(user)
+
+
+# ----------------------- Upload -----------------------
+@api.post("/upload")
+async def upload(file: UploadFile = File(...), user: dict = Depends(current_user)):
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Please upload an image.")
+    ext = (file.filename or "img").rsplit(".", 1)[-1].lower()
+    if ext not in ("jpg", "jpeg", "png", "webp", "gif"):
+        ext = "jpg"
+    path = f"{APP_NAME}/uploads/{user['id']}/{uuid.uuid4()}.{ext}"
+    data = await file.read()
+    if len(data) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image is too large (max 8MB).")
+    result = put_object(path, data, file.content_type)
+    await db.files.insert_one({
+        "id": str(uuid.uuid4()), "user_id": user["id"],
+        "storage_path": result["path"], "content_type": file.content_type,
+        "size": result.get("size", len(data)), "is_deleted": False,
+        "created_at": iso(now_utc()),
+    })
+    return {"path": result["path"], "url": f"/api/files/{result['path']}"}
+
+
+@api.get("/files/{path:path}")
+async def get_file(path: str):
+    rec = await db.files.find_one({"storage_path": path, "is_deleted": False})
+    if not rec:
+        raise HTTPException(status_code=404, detail="File not found")
+    data, ct = get_object(path)
+    return Response(content=data, media_type=rec.get("content_type") or ct)
+
+
+# ----------------------- Users / Follow -----------------------
+@api.get("/users/search")
+async def search_users(q: str = "", user: dict = Depends(current_user)):
+    q = (q or "").strip()
+    query = {"id": {"$ne": user["id"]}}
+    if q:
+        query["name"] = {"$regex": re.escape(q), "$options": "i"}
+    cursor = db.users.find(query, {"_id": 0, "password_hash": 0}).limit(50)
+    results = []
+    async for u in cursor:
+        results.append(public_user_brief(u) | {
+            "is_following": user["id"] in u.get("followers", []),
+        })
+    return results
+
+
+@api.get("/users/{user_id}")
+async def get_user_profile(user_id: str, user: dict = Depends(current_user)):
+    target = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    # Recommendations + city/country stats
+    cursor = db.recommendations.find({"user_id": user_id}, {"_id": 0})
+    rec_ids_by_city: dict = {}
+    async for r in cursor:
+        rec_ids_by_city.setdefault(r["city_id"], []).append(r)
+    # Build cities/country counts
+    city_ids = list(rec_ids_by_city.keys())
+    cities = []
+    if city_ids:
+        async for c in db.cities.find({"id": {"$in": city_ids}}, {"_id": 0}):
+            cities.append(c | {"rec_count": len(rec_ids_by_city.get(c["id"], []))})
+    countries = sorted({c["country"] for c in cities if c.get("country")})
+    return {
+        **public_user_brief(target),
+        "is_following": user["id"] in target.get("followers", []),
+        "follows_me": target["id"] in user.get("following", []),
+        "city_count": len(cities),
+        "country_count": len(countries),
+        "follower_count": len(target.get("followers", [])),
+        "following_count": len(target.get("following", [])),
+        "cities": cities,
+    }
+
+
+@api.post("/users/{user_id}/follow")
+async def follow_user(user_id: str, user: dict = Depends(current_user)):
+    if user_id == user["id"]:
+        raise HTTPException(status_code=400, detail="Can't follow yourself")
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.users.update_one({"id": user["id"]}, {"$addToSet": {"following": user_id}})
+    await db.users.update_one({"id": user_id}, {"$addToSet": {"followers": user["id"]}})
+    try:
+        await db.follows.insert_one({
+            "follower_id": user["id"], "following_id": user_id,
+            "created_at": iso(now_utc()),
+        })
+    except Exception:
+        pass
+    return {"ok": True}
+
+
+@api.post("/users/{user_id}/unfollow")
+async def unfollow_user(user_id: str, user: dict = Depends(current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$pull": {"following": user_id}})
+    await db.users.update_one({"id": user_id}, {"$pull": {"followers": user["id"]}})
+    await db.follows.delete_one({"follower_id": user["id"], "following_id": user_id})
+    return {"ok": True}
+
+
+@api.patch("/users/me")
+async def update_me(req: UpdateProfileReq, user: dict = Depends(current_user)):
+    updates = {k: v for k, v in req.model_dump(exclude_unset=True).items() if v is not None}
+    if updates:
+        await db.users.update_one({"id": user["id"]}, {"$set": updates})
+    u = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    return public_user(u)
+
+
+# ----------------------- Cities -----------------------
+@api.get("/cities")
+async def list_cities(q: str = "", user: dict = Depends(current_user)):
+    q = (q or "").strip().lower()
+    query: dict = {}
+    if q:
+        query["name_lower"] = {"$regex": re.escape(q)}
+    cursor = db.cities.find(query, {"_id": 0}).limit(50)
+    return [c async for c in cursor]
+
+
+@api.get("/cities/{city_id}")
+async def get_city(city_id: str, user: dict = Depends(current_user)):
+    c = await db.cities.find_one({"id": city_id}, {"_id": 0})
+    if not c:
+        raise HTTPException(status_code=404, detail="City not found")
+    return c
+
+
+@api.get("/explore/cities")
+async def explore_cities(user: dict = Depends(current_user)):
+    """Cities where at least one followed user has a recommendation."""
+    following_ids = user.get("following", []) + [user["id"]]
+    pipeline = [
+        {"$match": {"user_id": {"$in": following_ids}}},
+        {"$group": {"_id": "$city_id", "user_ids": {"$addToSet": "$user_id"}, "count": {"$sum": 1}}},
+    ]
+    agg = await db.recommendations.aggregate(pipeline).to_list(500)
+    if not agg:
+        return []
+    city_ids = [a["_id"] for a in agg]
+    cities = {c["id"]: c async for c in db.cities.find({"id": {"$in": city_ids}}, {"_id": 0})}
+    # collect avatar info for friends
+    friend_ids_all = list({uid for a in agg for uid in a["user_ids"]})
+    users = {u["id"]: public_user_brief(u) async for u in db.users.find({"id": {"$in": friend_ids_all}}, {"_id": 0, "password_hash": 0})}
+    out = []
+    for a in agg:
+        c = cities.get(a["_id"])
+        if not c:
+            continue
+        friend_briefs = [users[uid] for uid in a["user_ids"] if uid in users]
+        out.append({**c, "friend_count": len(friend_briefs), "rec_count": a["count"], "friends": friend_briefs})
+    out.sort(key=lambda x: x["rec_count"], reverse=True)
+    return out
+
+
+@api.get("/explore/cities/{city_id}/friends")
+async def explore_city_friends(city_id: str, user: dict = Depends(current_user)):
+    following_ids = user.get("following", []) + [user["id"]]
+    pipeline = [
+        {"$match": {"city_id": city_id, "user_id": {"$in": following_ids}}},
+        {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+    ]
+    agg = await db.recommendations.aggregate(pipeline).to_list(500)
+    if not agg:
+        return []
+    user_ids = [a["_id"] for a in agg]
+    users = {u["id"]: u async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "password_hash": 0})}
+    return [
+        {**public_user_brief(users[a["_id"]]), "rec_count": a["count"]}
+        for a in agg if a["_id"] in users
+    ]
+
+
+# ----------------------- Recommendations -----------------------
+@api.post("/recommendations")
+async def create_recommendation(req: RecCreateReq, user: dict = Depends(current_user)):
+    if req.category not in ("food", "experience", "stay", "getting_around"):
+        raise HTTPException(status_code=400, detail="Invalid category")
+    if not req.place_name.strip():
+        raise HTTPException(status_code=400, detail="Place name required")
+    # resolve city
+    if req.city_id:
+        city = await db.cities.find_one({"id": req.city_id}, {"_id": 0})
+        if not city:
+            raise HTTPException(status_code=404, detail="City not found")
+    elif req.city_name:
+        city = await upsert_city(req.city_name, req.country, req.country_code)
+    else:
+        raise HTTPException(status_code=400, detail="City is required")
+    rec_id = str(uuid.uuid4())
+    rec = {
+        "id": rec_id, "user_id": user["id"], "city_id": city["id"],
+        "place_name": req.place_name.strip(),
+        "place_id": req.place_id, "place_address": req.place_address,
+        "place_name_normalized": slugify(req.place_name),
+        "category": req.category, "note": (req.note or "").strip(),
+        "photo_url": req.photo_url, "created_at": iso(now_utc()),
+    }
+    await db.recommendations.insert_one(rec)
+    rec.pop("_id", None)
+    return {**rec, "city": city}
+
+
+@api.patch("/recommendations/{rec_id}")
+async def update_recommendation(rec_id: str, req: RecUpdateReq, user: dict = Depends(current_user)):
+    rec = await db.recommendations.find_one({"id": rec_id})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+    if rec["user_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Can only edit your own recommendations")
+    updates = {k: v for k, v in req.model_dump(exclude_unset=True).items() if v is not None}
+    if "place_name" in updates:
+        updates["place_name_normalized"] = slugify(updates["place_name"])
+    if updates:
+        await db.recommendations.update_one({"id": rec_id}, {"$set": updates})
+    r = await db.recommendations.find_one({"id": rec_id}, {"_id": 0})
+    return r
+
+
+@api.delete("/recommendations/{rec_id}")
+async def delete_recommendation(rec_id: str, user: dict = Depends(current_user)):
+    rec = await db.recommendations.find_one({"id": rec_id})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+    if rec["user_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Can only delete your own recommendations")
+    await db.recommendations.delete_one({"id": rec_id})
+    # Also remove this rec from any trip plans
+    await db.trip_plans.update_many(
+        {"saved_recs.recommendation_id": rec_id},
+        {"$pull": {"saved_recs": {"recommendation_id": rec_id},
+                   "checked_recs": rec_id}}
+    )
+    return {"ok": True}
+
+
+def _place_key(rec: dict) -> str:
+    return rec.get("place_id") or f"name::{rec.get('place_name_normalized') or slugify(rec.get('place_name',''))}"
+
+
+async def _user_saved_place_keys(user_id: str, city_id: str) -> set:
+    plan = await db.trip_plans.find_one({"user_id": user_id, "city_id": city_id}, {"_id": 0})
+    if not plan:
+        return set()
+    saved_rec_ids = [s["recommendation_id"] for s in plan.get("saved_recs", [])]
+    if not saved_rec_ids:
+        return set()
+    keys = set()
+    async for r in db.recommendations.find({"id": {"$in": saved_rec_ids}}, {"_id": 0}):
+        keys.add(_place_key(r))
+    return keys
+
+
+@api.get("/cities/{city_id}/recommendations")
+async def list_city_recommendations(city_id: str, category: Optional[str] = None,
+                                    user: dict = Depends(current_user)):
+    """Returns places (grouped if 2+ followed users recommended the same place)."""
+    following_ids = user.get("following", []) + [user["id"]]
+    query = {"city_id": city_id, "user_id": {"$in": following_ids}}
+    if category and category != "all":
+        query["category"] = category
+    recs = []
+    async for r in db.recommendations.find(query, {"_id": 0}):
+        recs.append(r)
+    if not recs:
+        return []
+    # gather user info
+    user_ids = list({r["user_id"] for r in recs})
+    users = {u["id"]: public_user_brief(u) async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "password_hash": 0})}
+    # group by place key
+    groups: dict = {}
+    for r in recs:
+        key = _place_key(r)
+        groups.setdefault(key, []).append(r)
+    # saved keys
+    saved_keys = await _user_saved_place_keys(user["id"], city_id)
+    out = []
+    for key, items in groups.items():
+        items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+        first = items[0]
+        contributors = [
+            {**users[i["user_id"]], "rec_id": i["id"], "note": i.get("note"),
+             "category": i.get("category"), "photo_url": i.get("photo_url"),
+             "created_at": i.get("created_at")}
+            for i in items if i["user_id"] in users
+        ]
+        out.append({
+            "place_key": key,
+            "place_name": first["place_name"],
+            "place_id": first.get("place_id"),
+            "place_address": first.get("place_address"),
+            "category": first.get("category"),
+            "photo_url": first.get("photo_url"),
+            "is_saved": key in saved_keys,
+            "contributors": contributors,
+            "primary_rec_id": first["id"],
+        })
+    out.sort(key=lambda g: len(g["contributors"]), reverse=True)
+    return out
+
+
+@api.get("/users/{user_id}/cities/{city_id}/recommendations")
+async def list_user_city_recs(user_id: str, city_id: str, category: Optional[str] = None,
+                              user: dict = Depends(current_user)):
+    query = {"user_id": user_id, "city_id": city_id}
+    if category and category != "all":
+        query["category"] = category
+    out = []
+    async for r in db.recommendations.find(query, {"_id": 0}).sort("created_at", -1):
+        out.append(r)
+    return out
+
+
+# ----------------------- Trip Plans / Bucket List -----------------------
+@api.get("/trip-plans")
+async def list_trip_plans(user: dict = Depends(current_user)):
+    cursor = db.trip_plans.find({"user_id": user["id"]}, {"_id": 0})
+    plans = [p async for p in cursor]
+    if not plans:
+        return []
+    city_ids = list({p["city_id"] for p in plans})
+    cities = {c["id"]: c async for c in db.cities.find({"id": {"$in": city_ids}}, {"_id": 0})}
+    return [{
+        **p, "city": cities.get(p["city_id"]),
+        "saved_count": len(p.get("saved_recs", [])),
+        "checked_count": len(p.get("checked_recs", [])),
+    } for p in plans]
+
+
+@api.post("/trip-plans/bucket-list")
+async def add_bucket_list(req: BucketListReq, user: dict = Depends(current_user)):
+    if req.city_id:
+        city = await db.cities.find_one({"id": req.city_id}, {"_id": 0})
+        if not city:
+            raise HTTPException(status_code=404, detail="City not found")
+    elif req.city_name:
+        city = await upsert_city(req.city_name, req.country, req.country_code)
+    else:
+        raise HTTPException(status_code=400, detail="city_id or city_name required")
+    existing = await db.trip_plans.find_one({"user_id": user["id"], "city_id": city["id"]}, {"_id": 0})
+    if existing:
+        return {**existing, "city": city}
+    plan = {
+        "id": str(uuid.uuid4()), "user_id": user["id"], "city_id": city["id"],
+        "saved_recs": [], "checked_recs": [],
+        "created_at": iso(now_utc()),
+    }
+    await db.trip_plans.insert_one(plan)
+    plan.pop("_id", None)
+    return {**plan, "city": city}
+
+
+@api.delete("/trip-plans/{city_id}")
+async def delete_trip_plan(city_id: str, user: dict = Depends(current_user)):
+    await db.trip_plans.delete_one({"user_id": user["id"], "city_id": city_id})
+    return {"ok": True}
+
+
+@api.get("/trip-plans/{city_id}")
+async def get_trip_plan(city_id: str, user: dict = Depends(current_user)):
+    plan = await db.trip_plans.find_one({"user_id": user["id"], "city_id": city_id}, {"_id": 0})
+    if not plan:
+        # Implicit empty plan
+        city = await db.cities.find_one({"id": city_id}, {"_id": 0})
+        if not city:
+            raise HTTPException(status_code=404, detail="City not found")
+        return {"id": None, "user_id": user["id"], "city_id": city_id,
+                "saved_recs": [], "checked_recs": [], "city": city, "saved": []}
+    city = await db.cities.find_one({"id": city_id}, {"_id": 0})
+    # populate saved recs
+    rec_ids = [s["recommendation_id"] for s in plan.get("saved_recs", [])]
+    recs = []
+    if rec_ids:
+        async for r in db.recommendations.find({"id": {"$in": rec_ids}}, {"_id": 0}):
+            recs.append(r)
+        # attach user info
+        user_ids = list({r["user_id"] for r in recs})
+        users = {u["id"]: public_user_brief(u) async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "password_hash": 0})}
+        recs = [{**r, "by_user": users.get(r["user_id"])} for r in recs]
+    return {**plan, "city": city, "saved": recs}
+
+
+@api.post("/trip-plans/{city_id}/save")
+async def save_rec_to_trip(city_id: str, req: SaveRecReq, user: dict = Depends(current_user)):
+    rec = await db.recommendations.find_one({"id": req.recommendation_id}, {"_id": 0})
+    if not rec or rec["city_id"] != city_id:
+        raise HTTPException(status_code=404, detail="Recommendation not found in this city")
+    plan = await db.trip_plans.find_one({"user_id": user["id"], "city_id": city_id})
+    now_iso = iso(now_utc())
+    if not plan:
+        plan = {
+            "id": str(uuid.uuid4()), "user_id": user["id"], "city_id": city_id,
+            "saved_recs": [{"recommendation_id": rec["id"], "original_user_id": rec["user_id"]}],
+            "checked_recs": [],
+            "created_at": now_iso,
+        }
+        await db.trip_plans.insert_one(plan)
+    else:
+        # check duplicate by place key
+        existing_ids = [s["recommendation_id"] for s in plan.get("saved_recs", [])]
+        existing_recs = []
+        if existing_ids:
+            async for r in db.recommendations.find({"id": {"$in": existing_ids}}, {"_id": 0}):
+                existing_recs.append(r)
+        existing_keys = {_place_key(r) for r in existing_recs}
+        if _place_key(rec) in existing_keys:
+            return {"ok": True, "already_saved": True}
+        await db.trip_plans.update_one(
+            {"user_id": user["id"], "city_id": city_id},
+            {"$push": {"saved_recs": {"recommendation_id": rec["id"], "original_user_id": rec["user_id"]}}}
+        )
+    return {"ok": True}
+
+
+@api.post("/trip-plans/{city_id}/unsave")
+async def unsave_rec(city_id: str, req: SaveRecReq, user: dict = Depends(current_user)):
+    rec = await db.recommendations.find_one({"id": req.recommendation_id}, {"_id": 0})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+    target_key = _place_key(rec)
+    plan = await db.trip_plans.find_one({"user_id": user["id"], "city_id": city_id})
+    if not plan:
+        return {"ok": True}
+    saved = plan.get("saved_recs", [])
+    if not saved:
+        return {"ok": True}
+    existing_ids = [s["recommendation_id"] for s in saved]
+    existing_recs = []
+    async for r in db.recommendations.find({"id": {"$in": existing_ids}}, {"_id": 0}):
+        existing_recs.append(r)
+    to_remove_rec_ids = [r["id"] for r in existing_recs if _place_key(r) == target_key]
+    if to_remove_rec_ids:
+        await db.trip_plans.update_one(
+            {"user_id": user["id"], "city_id": city_id},
+            {"$pull": {"saved_recs": {"recommendation_id": {"$in": to_remove_rec_ids}},
+                       "checked_recs": {"$in": to_remove_rec_ids}}}
+        )
+    return {"ok": True}
+
+
+@api.post("/trip-plans/{city_id}/check")
+async def check_rec(city_id: str, req: CheckRecReq, user: dict = Depends(current_user)):
+    op = "$addToSet" if req.checked else "$pull"
+    res = await db.trip_plans.update_one(
+        {"user_id": user["id"], "city_id": city_id},
+        {op: {"checked_recs": req.recommendation_id}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Trip plan not found")
+    # If newly checked, return a prompt if user has no recs in this city yet
+    has_own = await db.recommendations.find_one({"user_id": user["id"], "city_id": city_id})
+    prompt = (req.checked and not has_own)
+    return {"ok": True, "prompt_add_to_trips": prompt}
+
+
+# ----------------------- Google Places proxy -----------------------
+@api.get("/places/autocomplete")
+async def places_autocomplete(q: str = Query(..., min_length=1),
+                              user: dict = Depends(current_user)):
+    if not GOOGLE_PLACES_KEY:
+        return {"suggestions": []}
+    try:
+        # Use new Places API (Autocomplete (New))
+        r = requests.post(
+            "https://places.googleapis.com/v1/places:autocomplete",
+            headers={
+                "Content-Type": "application/json",
+                "X-Goog-Api-Key": GOOGLE_PLACES_KEY,
+            },
+            json={"input": q},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            logger.warning(f"Places autocomplete {r.status_code}: {r.text[:200]}")
+            return {"suggestions": []}
+        data = r.json()
+        out = []
+        for s in data.get("suggestions", []):
+            pp = s.get("placePrediction") or {}
+            pid = pp.get("placeId")
+            text_obj = pp.get("text", {})
+            txt_full = text_obj.get("text") or ""
+            structured = pp.get("structuredFormat") or {}
+            main_text = (structured.get("mainText") or {}).get("text") or txt_full
+            secondary = (structured.get("secondaryText") or {}).get("text") or ""
+            out.append({"place_id": pid, "main_text": main_text,
+                       "secondary_text": secondary, "full_text": txt_full})
+        return {"suggestions": out}
+    except Exception as e:
+        logger.error(f"Places autocomplete error: {e}")
+        return {"suggestions": []}
+
+
+@api.get("/places/details/{place_id}")
+async def places_details(place_id: str, user: dict = Depends(current_user)):
+    if not GOOGLE_PLACES_KEY:
+        raise HTTPException(status_code=503, detail="Places API not configured")
+    try:
+        r = requests.get(
+            f"https://places.googleapis.com/v1/places/{place_id}",
+            headers={
+                "X-Goog-Api-Key": GOOGLE_PLACES_KEY,
+                "X-Goog-FieldMask": "id,displayName,formattedAddress,addressComponents,location",
+            },
+            timeout=10,
+        )
+        if r.status_code != 200:
+            logger.warning(f"Place details {r.status_code}: {r.text[:200]}")
+            raise HTTPException(status_code=400, detail="Couldn't fetch place details")
+        data = r.json()
+        display = (data.get("displayName") or {}).get("text") or ""
+        formatted = data.get("formattedAddress") or ""
+        # Extract city and country from address components
+        city = ""; country = ""; country_code = ""
+        for c in data.get("addressComponents", []):
+            types = c.get("types", [])
+            if "locality" in types:
+                city = c.get("longText") or c.get("shortText") or ""
+            elif not city and ("administrative_area_level_2" in types or "postal_town" in types):
+                city = c.get("longText") or c.get("shortText") or ""
+            if "country" in types:
+                country = c.get("longText") or ""
+                country_code = c.get("shortText") or ""
+        return {
+            "place_id": data.get("id") or place_id,
+            "display_name": display,
+            "formatted_address": formatted,
+            "city": city, "country": country, "country_code": country_code,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Place details error: {e}")
+        raise HTTPException(status_code=400, detail="Couldn't fetch place details")
+
+
+# ----------------------- Mount router + CORS -----------------------
+app.include_router(api)
 
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=CORS_ORIGINS if CORS_ORIGINS else ["*"],
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
-async def shutdown_db_client():
+async def shutdown():
     client.close()
