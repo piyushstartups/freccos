@@ -1314,9 +1314,13 @@ async def places_details(place_id: str, user: dict = Depends(current_user)):
 # ----------------------- Mount router + CORS -----------------------
 app.include_router(api)
 
+# CORS — when CORS_ORIGINS is "*" we use allow_origin_regex so cookies (credentials)
+# still work (browsers forbid allow_origins=["*"] together with allow_credentials=True).
+_wildcard = (not CORS_ORIGINS) or "*" in CORS_ORIGINS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS if CORS_ORIGINS else ["*"],
+    allow_origins=[] if _wildcard else CORS_ORIGINS,
+    allow_origin_regex=".*" if _wildcard else None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
