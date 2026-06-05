@@ -1,0 +1,161 @@
+{
+  "brand_name": "Freccos",
+  "app_type": "mobile_web_app",
+  "theme": "light",
+  "archetype": "iOS Native (Apple Design Guidelines)",
+  "core_philosophy": "Pure Apple / iOS feel. Clean, restrained, premium. 'Would Apple ship this?' test. Max-width 430px centered column on desktop. Sentence case everywhere.",
+  "colors": {
+    "page_background": "#F2F2F7",
+    "card_background": "#FFFFFF",
+    "dark_header_hero": "#1C1C1E",
+    "primary_text": "#1C1C1E",
+    "secondary_text": "#8E8E93",
+    "tertiary_text": "#C7C7CC",
+    "border_separator": "#E5E5EA",
+    "accent_blue_primary": "#0A84FF",
+    "success_green": "#30D158",
+    "warning_orange_food": "#FF9F0A",
+    "accent_purple_experience": "#BF5AF2",
+    "accent_teal_stay": "#5AC8FA",
+    "accent_coral_getting_around": "#FF6B6B"
+  },
+  "typography": {
+    "font_family": "-apple-system, 'SF Pro Display', 'SF Pro Text', Inter, sans-serif",
+    "rules": "Sentence case everywhere — never ALL CAPS. Use explicit font sizes and weights provided below.",
+    "scale": {
+      "large_title": "28px, 700 weight",
+      "title_1": "22px, 700 weight",
+      "title_2": "18px, 600 weight",
+      "title_3": "16px, 600 weight",
+      "body": "15px, 400 weight, line-height 1.5",
+      "subhead": "14px, 400 weight",
+      "caption": "12px, 400 weight",
+      "label": "11px, 500 weight, letter-spacing 0.5px"
+    }
+  },
+  "shape_and_spacing": {
+    "border_radius": {
+      "cards": "12px",
+      "buttons_primary": "9999px",
+      "buttons_secondary": "10px",
+      "chips": "9999px",
+      "avatars": "50%"
+    },
+    "spacing": {
+      "card_padding": "14px 16px",
+      "section_gap": "24px",
+      "page_margins": "16px horizontal"
+    }
+  },
+  "elevation": {
+    "cards": "box-shadow: 0 1px 3px rgba(0,0,0,0.08)",
+    "modal_bottom_sheet": "box-shadow: 0 -2px 20px rgba(0,0,0,0.12)",
+    "rules": "No heavy shadows — keep flat and light"
+  },
+  "motion": {
+    "default_transition": "200ms ease-out",
+    "bottom_sheet": "spring up animation",
+    "tab_switching": "crossfade 150ms",
+    "save_button": "spring scale animation on tap"
+  },
+  "icons": {
+    "library": "lucide-react",
+    "style": "SF Symbols style. Outlined style, 20px default. Filled only for active/selected states."
+  },
+  "tone_and_copy": {
+    "style": "Warm, personal, like the app was made by a friend for friends.",
+    "casing": "Sentence case everywhere.",
+    "vocabulary": {
+      "recommendations": "Use 'Recommendations' not 'recs' in UI.",
+      "attribution": "Casual, e.g., 'via Priya'",
+      "errors": "Human, e.g., 'This doesn't look right'"
+    }
+  },
+  "components": {
+    "bottom_navigation_bar": "4 tabs (Explore/Friends/Trips/Profile), icons + labels. Active color: #0A84FF. Inactive color: #8E8E93.",
+    "fab": "Circular, #0A84FF background, white '+' icon, bottom right, expands to speed dial with 3 options.",
+    "bottom_sheets": "For forms — slide up with spring animation. box-shadow: 0 -2px 20px rgba(0,0,0,0.12).",
+    "category_chips": "Tonal category chips: each category has its own subtle tinted background matching its accent color (e.g. #FF9F0A for food with 10-15% opacity background). Fully pill-shaped.",
+    "avatars": "Circular avatars with initials fallback on tinted background — never grey silhouettes. Grouped/Stacked avatars: overlapping circles, max 3 visible + '+N' overflow.",
+    "desktop_wrapper": "Center the app in a max-width 430px column on larger screens. The outer body should be #F2F2F7 or a darker gray to contrast the mobile view."
+  },
+  "key_screens_layout": {
+    "splash_login": "Dark-themed login (#1C1C1E) + multi-step signup (invite code -> name/email/password -> photo + bio).",
+    "explore_tab": "City grid -> city detail with dark header showing flag emoji + city name, horizontal friends-who've-been strip, pill category filter tabs (All/Food/Experience/Stay/Getting Around), recommendation cards with stacked avatars, Save button with spring animation.",
+    "add_recommendation": "Bottom sheet: place name with Google Places autocomplete, city pre-fill, 4 category chips, optional note + 4:3 photo.",
+    "friend_profile": "Dark hero (#1C1C1E) with circular avatar + name + bio + hero stat counters side by side + Follow pill button. Below: countries -> cities -> recommendations. 'Ask [Name] about [City]' WhatsApp deeplink.",
+    "my_profile": "Same dark header, Trips/Bucket list tabs, invite code shareable card at bottom, edit/delete on own recs.",
+    "trip_plans": "Saved recs grouped by city, checkbox-to-mark-visited (no deletion), trip lifecycle prompt.",
+    "friends_tab": "Search, 'people you follow', 'discover' list with Follow buttons."
+  },
+  "instructions_to_main_agent": [
+    "Strictly use the exact hex codes provided in this JSON.",
+    "Implement the PWA max-width constraint wrapper (max-width: 430px, margin: 0 auto) on the root layout to maintain the mobile-first iOS app feel on desktop browsers.",
+    "Use Lucide React icons exclusively with size={20}, default to outline, use fill variants ONLY for active states.",
+    "Implement Framer Motion for bottom sheet spring, tab crossfade, and button press scales.",
+    "Add 'data-testid' attributes to all interactive elements for robust testing.",
+    "For typography, use arbitrary values in Tailwind or configure the theme to match the exact pixel sizes and weights (e.g., text-[28px] font-bold).",
+    "NEVER use placeholder images from dummyimage.com or via.placeholder.com. ONLY use the URLs provided in the media section.",
+    "Ensure the entire app uses sentence case. Avoid uppercase text styling completely."
+  ],
+  "image_urls": {
+    "destinations": [
+      {
+        "url": "https://images.unsplash.com/photo-1550340499-a6c60fc8287c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NjV8MHwxfHNlYXJjaHwxfHxwYXJpcyUyMGNpdHklMjBhcmNoaXRlY3R1cmV8ZW58MHx8fHwxNzgwNjQwNjc4fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Paris city architecture"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1614082242765-7c98ca0f3df3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2OTV8MHwxfHNlYXJjaHwyfHxnb2ElMjBiZWFjaHxlbnwwfHx8fDE3ODA2NDA2Nzh8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Goa beach sunset"
+      }
+    ],
+    "food_and_restaurants": [
+      {
+        "url": "https://images.unsplash.com/photo-1663530761401-15eefb544889?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1MTN8MHwxfHNlYXJjaHwxfHxyZXN0YXVyYW50JTIwZm9vZCUyMHBsYXRpbmd8ZW58MHx8fHwxNzgwNjQwNjc4fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Gourmet restaurant food plating"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1564759296729-771e78c26df7?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1MTN8MHwxfHNlYXJjaHwyfHxyZXN0YXVyYW50JTIwZm9vZCUyMHBsYXRpbmd8ZW58MHx8fHwxNzgwNjQwNjc4fDA&ixlib=rb-4.1.0&q=85",
+        "description": "White plate fine dining"
+      }
+    ],
+    "stays_and_hotels": [
+      {
+        "url": "https://images.unsplash.com/photo-1711059985570-4c32ed12a12c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzB8MHwxfHNlYXJjaHwxfHxib3V0aXF1ZSUyMGhvdGVsJTIwYmVkcm9vbXxlbnwwfHx8fDE3ODA2NDA2Nzh8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Boutique hotel bedroom"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1590490360182-c33d57733427?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzB8MHwxfHNlYXJjaHwyfHxib3V0aXF1ZSUyMGhvdGVsJTIwYmVkcm9vbXxlbnwwfHx8fDE3ODA2NDA2Nzh8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Luxury hotel room couch"
+      }
+    ],
+    "experiences": [
+      {
+        "url": "https://images.unsplash.com/photo-1542235222-30e843cb43a1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzZ8MHwxfHNlYXJjaHwxfHx0cmF2ZWwlMjBhZHZlbnR1cmUlMjBsYW5kc2NhcGV8ZW58MHx8fHwxNzgwNjQwNjg1fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Travel adventure landscape"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1669604120699-eeba651ac235?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzZ8MHwxfHNlYXJjaHwyfHx0cmF2ZWwlMjBhZHZlbnR1cmUlMjBsYW5kc2NhcGV8ZW58MHx8fHwxNzgwNjQwNjg1fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Scenic lake mountains travel experience"
+      }
+    ],
+    "avatars": [
+      {
+        "url": "https://images.unsplash.com/photo-1489278353717-f64c6ee8a4d2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHwxfHxwb3J0cmFpdCUyMHNtaWxpbmd8ZW58MHx8fHwxNzgwNjQwNjc4fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Smiling person avatar 1"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1548382131-e0ebb1f0cdea?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHw0fHxwb3J0cmFpdCUyMHNtaWxpbmd8ZW58MHx8fHwxNzgwNjQwNjc4fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Smiling person avatar 2"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHwyfHxwb3J0cmFpdCUyMHNtaWxpbmd8ZW58MHx8fHwxNzgwNjQwNjc4fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Smiling person avatar 3"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1580489944761-15a19d654956?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHwzfHxwb3J0cmFpdCUyMHNtaWxpbmd8ZW58MHx8fHwxNzgwNjQwNjc4fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Smiling person avatar 4"
+      }
+    ]
+  }
+}
