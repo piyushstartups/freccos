@@ -116,18 +116,18 @@ export default function MyProfile() {
 
   return (
     <div className="pb-32 fade-in" data-testid="my-profile">
-      <div style={{ background: "#1C1C1E", color: "#fff", padding: "36px 16px 22px", position: "relative" }}>
-        <div style={{ marginBottom: 8 }}>
-          <FreccosLogo size={32} />
+      <div style={{ background: "#1C1C1E", color: "#fff", padding: "32px 16px 22px", position: "relative" }}>
+        <div style={{ marginBottom: 22 }}>
+          <FreccosLogo size={44} />
         </div>
         <button
           data-testid="settings-btn"
           onClick={() => setShowSettings(true)}
-          style={{ position: "absolute", top: 36, right: 16, background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", padding: 8, borderRadius: 9999 }}
+          style={{ position: "absolute", top: 32, right: 16, background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", padding: 8, borderRadius: 9999 }}
         >
           <Settings size={16} />
         </button>
-        <div className="flex items-center gap-3 mt-1">
+        <div className="flex items-center gap-3 mt-2">
           <Avatar user={profile} size={72} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <h1 className="t-title1" style={{ color: "#fff" }}>{profile.name}</h1>

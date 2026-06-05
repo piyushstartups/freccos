@@ -92,9 +92,11 @@ export default function Signup() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <div
-        style={{ background: "#1C1C1E", color: "#fff", padding: "40px 24px 28px", textAlign: "center" }}
+        style={{ background: "#1C1C1E", color: "#fff", padding: "44px 24px 30px", textAlign: "center" }}
       >
-        <FreccosLogo size={48} />
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <FreccosLogo size={64} />
+        </div>
         <h1 className="t-title1 mt-3" style={{ color: "#fff" }}>Join your friends on Freccos</h1>
         <p className="t-cap" style={{ color: "#8E8E93" }}>Step {step} of 3</p>
         <div style={{ display: "flex", gap: 4, justifyContent: "center", marginTop: 10 }}>

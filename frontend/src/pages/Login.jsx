@@ -34,11 +34,13 @@ export default function Login() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <div
-        style={{ background: "#1C1C1E", color: "#fff", padding: "48px 24px 32px", textAlign: "center" }}
+        style={{ background: "#1C1C1E", color: "#fff", padding: "56px 24px 36px", textAlign: "center" }}
         data-testid="login-hero"
       >
-        <FreccosLogo size={56} />
-        <h1 className="t-large mt-3" style={{ color: "#fff" }}>Freccos</h1>
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <FreccosLogo size={88} />
+        </div>
+        <h1 className="t-large mt-4" style={{ color: "#fff" }}>Freccos</h1>
         <p className="t-sub" style={{ color: "#8E8E93" }}>The places your friends actually love.</p>
       </div>
       <form onSubmit={submit} style={{ padding: "28px 16px", flex: 1 }}>
