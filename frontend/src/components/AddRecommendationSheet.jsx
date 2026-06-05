@@ -5,17 +5,18 @@ import { CATEGORIES } from "../lib/utils-frec";
 import { Camera, Loader2, Check } from "lucide-react";
 import { toast } from "sonner";
 
-export default function AddRecommendationSheet({ open, onClose, lockedCity, onCreated }) {
+export default function AddRecommendationSheet({ open, onClose, lockedCity, onCreated, editingRec }) {
+  const isEdit = !!editingRec;
   const [placeQuery, setPlaceQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
-  const [selectedPlace, setSelectedPlace] = useState(null); // {place_id, display_name, city, country, country_code, formatted_address}
+  const [selectedPlace, setSelectedPlace] = useState(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [cityName, setCityName] = useState("");
   const [country, setCountry] = useState("");
   const [countryCode, setCountryCode] = useState("");
   const [category, setCategory] = useState(null);
   const [note, setNote] = useState("");
-  const [photo, setPhoto] = useState(null);  // {path,url}
+  const [photo, setPhoto] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -27,26 +28,31 @@ export default function AddRecommendationSheet({ open, onClose, lockedCity, onCr
       setPlaceQuery(""); setSuggestions([]); setSelectedPlace(null);
       setShowSuggestions(false); setCityName(""); setCountry(""); setCountryCode("");
       setCategory(null); setNote(""); setPhoto(null); setPhotoPreview(null);
+      return;
     }
-  }, [open]);
+    if (editingRec) {
+      setPlaceQuery(editingRec.place_name || "");
+      setCategory(editingRec.category || null);
+      setNote(editingRec.note || "");
+      if (editingRec.photo_url) setPhoto({ url: editingRec.photo_url });
+      // No city editing in edit mode — locked to current city
+    }
+  }, [open, editingRec]);
 
   useEffect(() => {
-    if (selectedPlace) return; // user already picked a suggestion
-    if (!placeQuery || placeQuery.length < 2) {
-      setSuggestions([]); return;
-    }
+    if (isEdit) return;             // no autocomplete when editing — keep place locked
+    if (selectedPlace) return;
+    if (!placeQuery || placeQuery.length < 2) { setSuggestions([]); return; }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
         const { data } = await api.get("/places/autocomplete", { params: { q: placeQuery } });
         setSuggestions(data.suggestions || []);
         setShowSuggestions(true);
-      } catch {
-        setSuggestions([]);
-      }
+      } catch { setSuggestions([]); }
     }, 220);
     return () => clearTimeout(debounceRef.current);
-  }, [placeQuery, selectedPlace]);
+  }, [placeQuery, selectedPlace, isEdit]);
 
   const pickSuggestion = async (s) => {
     setShowSuggestions(false);
@@ -65,61 +71,72 @@ export default function AddRecommendationSheet({ open, onClose, lockedCity, onCr
         setCountry(data.country || "");
         setCountryCode(data.country_code || "");
       }
-    } catch { /* keep partial selection; user can free-type city */ }
+    } catch { /* keep partial */ }
   };
 
   const handlePhoto = async (file) => {
     if (!file) return;
     setUploading(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
+      const fd = new FormData(); fd.append("file", file);
       const { data } = await api.post("/upload", fd, { headers: { "Content-Type": "multipart/form-data" } });
       setPhoto(data);
       setPhotoPreview(URL.createObjectURL(file));
-    } catch (e) {
-      toast.error("Couldn't upload that photo — try a smaller one.");
-    } finally {
-      setUploading(false);
-    }
+    } catch { toast.error("Couldn't upload that photo — try a smaller one."); }
+    finally { setUploading(false); }
   };
 
-  const canSubmit = placeQuery.trim().length > 0 && category && (lockedCity || cityName.trim());
+  const canSubmit = placeQuery.trim().length > 0 && category && (isEdit || lockedCity || cityName.trim());
 
   const submit = async () => {
     if (!canSubmit || submitting) return;
     setSubmitting(true);
     try {
-      const payload = {
-        place_name: selectedPlace?.display_name || placeQuery.trim(),
-        category,
-        note: note.trim() || undefined,
-        photo_url: photo?.url,
-        place_id: selectedPlace?.place_id,
-        place_address: selectedPlace?.formatted_address,
-      };
-      if (lockedCity?.id) {
-        payload.city_id = lockedCity.id;
+      if (isEdit) {
+        const payload = {
+          place_name: placeQuery.trim(),
+          category,
+          note: note.trim() || "",
+          photo_url: photo?.url || null,
+        };
+        const { data } = await api.patch(`/recommendations/${editingRec.id}`, payload);
+        toast.success("Recommendation updated");
+        onCreated?.(data);
+        onClose?.();
       } else {
-        payload.city_name = cityName.trim();
-        payload.country = country || undefined;
-        payload.country_code = countryCode || undefined;
+        const payload = {
+          place_name: selectedPlace?.display_name || placeQuery.trim(),
+          category,
+          note: note.trim() || undefined,
+          photo_url: photo?.url,
+          place_id: selectedPlace?.place_id,
+          place_address: selectedPlace?.formatted_address,
+        };
+        if (lockedCity?.id) {
+          payload.city_id = lockedCity.id;
+        } else {
+          payload.city_name = cityName.trim();
+          payload.country = country || undefined;
+          payload.country_code = countryCode || undefined;
+        }
+        const { data } = await api.post("/recommendations", payload);
+        toast.success("Recommendation added!");
+        onCreated?.(data);
+        onClose?.();
       }
-      const { data } = await api.post("/recommendations", payload);
-      toast.success("Recommendation added!");
-      onCreated?.(data);
-      onClose?.();
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Something didn't work — try again.");
-    } finally {
-      setSubmitting(false);
-    }
+    } finally { setSubmitting(false); }
   };
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Add a recommendation" testId="add-rec-sheet">
+    <BottomSheet
+      open={open}
+      onClose={onClose}
+      title={isEdit ? "Edit recommendation" : "Add a recommendation"}
+      testId="add-rec-sheet"
+    >
       <div className="px-4 pb-6" style={{ paddingBottom: "max(24px, env(safe-area-inset-bottom))" }}>
-        {/* Place input with autocomplete */}
         <div style={{ position: "relative" }}>
           <label className="t-label muted block mb-1">Place</label>
           <input
@@ -129,6 +146,7 @@ export default function AddRecommendationSheet({ open, onClose, lockedCity, onCr
             value={placeQuery}
             onChange={(e) => { setPlaceQuery(e.target.value); setSelectedPlace(null); }}
             onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+            disabled={isEdit && false}
           />
           {showSuggestions && suggestions.length > 0 && (
             <div
@@ -152,35 +170,35 @@ export default function AddRecommendationSheet({ open, onClose, lockedCity, onCr
           )}
         </div>
 
-        {/* City (locked or editable) */}
-        <div className="mt-4">
-          <label className="t-label muted block mb-1">City</label>
-          {lockedCity ? (
-            <div className="ios-input" style={{ background: "rgba(120,120,128,0.08)", color: "#3a3a3c" }} data-testid="rec-city-locked">
-              {lockedCity.flag_emoji} {lockedCity.name}{lockedCity.country ? `, ${lockedCity.country}` : ""}
-            </div>
-          ) : (
-            <div className="flex gap-2">
-              <input
-                data-testid="rec-city-input"
-                className="ios-input"
-                placeholder="City"
-                value={cityName}
-                onChange={(e) => setCityName(e.target.value)}
-              />
-              <input
-                data-testid="rec-country-input"
-                className="ios-input"
-                placeholder="Country"
-                value={country}
-                onChange={(e) => setCountry(e.target.value)}
-                style={{ maxWidth: 130 }}
-              />
-            </div>
-          )}
-        </div>
+        {!isEdit && (
+          <div className="mt-4">
+            <label className="t-label muted block mb-1">City</label>
+            {lockedCity ? (
+              <div className="ios-input" style={{ background: "rgba(120,120,128,0.08)", color: "#3a3a3c" }} data-testid="rec-city-locked">
+                {lockedCity.flag_emoji} {lockedCity.name}{lockedCity.country ? `, ${lockedCity.country}` : ""}
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  data-testid="rec-city-input"
+                  className="ios-input"
+                  placeholder="City"
+                  value={cityName}
+                  onChange={(e) => setCityName(e.target.value)}
+                />
+                <input
+                  data-testid="rec-country-input"
+                  className="ios-input"
+                  placeholder="Country"
+                  value={country}
+                  onChange={(e) => setCountry(e.target.value)}
+                  style={{ maxWidth: 130 }}
+                />
+              </div>
+            )}
+          </div>
+        )}
 
-        {/* Category */}
         <div className="mt-4">
           <label className="t-label muted block mb-2">Category</label>
           <div className="flex flex-wrap gap-2">
@@ -201,7 +219,6 @@ export default function AddRecommendationSheet({ open, onClose, lockedCity, onCr
           </div>
         </div>
 
-        {/* Note */}
         <div className="mt-4">
           <label className="t-label muted block mb-1">Note <span className="tertiary">(optional)</span></label>
           <textarea
@@ -215,7 +232,6 @@ export default function AddRecommendationSheet({ open, onClose, lockedCity, onCr
           />
         </div>
 
-        {/* Photo */}
         <div className="mt-4">
           <label className="t-label muted block mb-1">Photo <span className="tertiary">(optional)</span></label>
           <input
@@ -226,12 +242,12 @@ export default function AddRecommendationSheet({ open, onClose, lockedCity, onCr
             style={{ display: "none" }}
             onChange={(e) => handlePhoto(e.target.files?.[0])}
           />
-          {photoPreview ? (
+          {photoPreview || photo?.url ? (
             <div
               data-testid="rec-photo-preview"
               style={{
                 width: "100%", aspectRatio: "4 / 3",
-                background: `url('${photoPreview}') center/cover`,
+                background: `url('${photoPreview || ((process.env.REACT_APP_BACKEND_URL || "") + photo.url)}') center/cover`,
                 borderRadius: 12, position: "relative",
               }}
             >
@@ -267,7 +283,7 @@ export default function AddRecommendationSheet({ open, onClose, lockedCity, onCr
           onClick={submit}
         >
           {submitting ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
-          Post recommendation
+          {isEdit ? "Save changes" : "Post recommendation"}
         </button>
       </div>
     </BottomSheet>

@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import api from "../lib/api";
 import { useAuth } from "../lib/auth";
 import Avatar from "../components/Avatar";
 import BottomSheet from "../components/BottomSheet";
 import AddRecommendationSheet from "../components/AddRecommendationSheet";
+import AddTripSheet from "../components/AddTripSheet";
 import { FreccosLogo } from "./Splash";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
-import { Settings, Share2, Copy, LogOut, Pencil, Trash2, ChevronLeft, Plus } from "lucide-react";
+import { Settings, Share2, Copy, LogOut, Pencil, Trash2, ChevronLeft, Plus, Map, MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { formatMonthYear } from "../lib/utils-frec";
 
@@ -15,16 +16,24 @@ export default function MyProfile() {
   const { user, logout, setUser } = useAuth();
   const nav = useNavigate();
   const [profile, setProfile] = useState(null);
+  const [trips, setTrips] = useState([]);   // [{city_id, city, rec_count}]
   const [openCityId, setOpenCityId] = useState(null);
   const [category, setCategory] = useState("all");
   const [myRecs, setMyRecs] = useState([]);
   const [showSettings, setShowSettings] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
-  const [addLockedCity, setAddLockedCity] = useState(null);
+  const [addRecOpen, setAddRecOpen] = useState(false);
+  const [addRecLockedCity, setAddRecLockedCity] = useState(null);
+  const [editingRec, setEditingRec] = useState(null);
+  const [addTripOpen, setAddTripOpen] = useState(false);
+  const [menuRecId, setMenuRecId] = useState(null);
 
   const load = async () => {
-    const { data: p } = await api.get(`/users/${user.id}`);
+    const [{ data: p }, { data: t }] = await Promise.all([
+      api.get(`/users/${user.id}`),
+      api.get("/trips"),
+    ]);
     setProfile(p);
+    setTrips(t);
   };
   useEffect(() => { if (user?.id) load(); /* eslint-disable-next-line */ }, [user?.id]);
 
@@ -53,6 +62,7 @@ export default function MyProfile() {
   };
 
   const deleteRec = async (rec) => {
+    setMenuRecId(null);
     if (!window.confirm("Delete this recommendation?")) return;
     try {
       await api.delete(`/recommendations/${rec.id}`);
@@ -62,28 +72,58 @@ export default function MyProfile() {
     } catch { toast.error("Couldn't delete"); }
   };
 
+  const startEdit = (rec) => {
+    setMenuRecId(null);
+    setEditingRec(rec);
+    setAddRecLockedCity(null);
+    setAddRecOpen(true);
+  };
+
+  const deleteTrip = async (cityId) => {
+    if (!window.confirm("Remove this city from your trips? Any recommendations you've added stay safe.")) return;
+    try {
+      await api.delete(`/trips/${cityId}`);
+      toast("Removed from trips");
+      load();
+    } catch { toast.error("Couldn't remove"); }
+  };
+
   if (!user || !profile) return <div className="p-6 t-sub muted">Loading...</div>;
 
-  const cityOpen = profile.cities.find((c) => c.id === openCityId);
-
-  // Group trip cities by country
+  // Build a city lookup, then group trips by country for display
+  const cityById = {};
+  for (const c of profile.cities || []) cityById[c.id] = c;
+  // Also surface trips returned by /api/trips (which includes manual trip entries
+  // for cities that don't yet have any recommendations).
+  const tripsByCity = {};
+  for (const t of trips) tripsByCity[t.city_id] = t;
+  const allCityIds = Array.from(new Set([...Object.keys(cityById), ...Object.keys(tripsByCity)]));
+  const allCities = allCityIds
+    .map((id) => {
+      const c = cityById[id] || tripsByCity[id]?.city;
+      if (!c) return null;
+      const rec_count = tripsByCity[id]?.rec_count ?? c.rec_count ?? 0;
+      return { ...c, rec_count };
+    })
+    .filter(Boolean);
   const byCountry = {};
-  for (const c of profile.cities || []) {
+  for (const c of allCities) {
     const key = c.country || "Other";
     (byCountry[key] = byCountry[key] || []).push(c);
   }
 
+  const cityOpen = allCities.find((c) => c.id === openCityId);
+
   return (
     <div className="pb-32 fade-in" data-testid="my-profile">
-      <div style={{ background: "#1C1C1E", color: "#fff", padding: "40px 16px 22px", position: "relative" }}>
-        <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
-          <FreccosLogo size={22} />
-          <span className="t-label" style={{ color: "#8E8E93", letterSpacing: 1.2 }}>FRECCOS</span>
+      <div style={{ background: "#1C1C1E", color: "#fff", padding: "36px 16px 22px", position: "relative" }}>
+        <div style={{ marginBottom: 8 }}>
+          <FreccosLogo size={32} />
         </div>
         <button
           data-testid="settings-btn"
           onClick={() => setShowSettings(true)}
-          style={{ position: "absolute", top: 40, right: 16, background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", padding: 8, borderRadius: 9999 }}
+          style={{ position: "absolute", top: 36, right: 16, background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", padding: 8, borderRadius: 9999 }}
         >
           <Settings size={16} />
         </button>
@@ -99,11 +139,11 @@ export default function MyProfile() {
         </div>
         <div className="flex items-center gap-6 mt-5">
           <div>
-            <div style={{ color: "#fff", fontSize: 24, fontWeight: 700 }} data-testid="me-stat-cities">{profile.city_count}</div>
+            <div style={{ color: "#fff", fontSize: 24, fontWeight: 700 }} data-testid="me-stat-cities">{allCities.length}</div>
             <div className="t-cap" style={{ color: "#8E8E93" }}>Cities</div>
           </div>
           <div>
-            <div style={{ color: "#fff", fontSize: 24, fontWeight: 700 }} data-testid="me-stat-countries">{profile.country_count}</div>
+            <div style={{ color: "#fff", fontSize: 24, fontWeight: 700 }} data-testid="me-stat-countries">{Object.keys(byCountry).filter((k) => k !== "Other").length || (allCities.length ? Object.keys(byCountry).length : 0)}</div>
             <div className="t-cap" style={{ color: "#8E8E93" }}>Countries</div>
           </div>
         </div>
@@ -114,22 +154,21 @@ export default function MyProfile() {
         <div className="px-4 pt-4 flex items-center justify-between">
           <h2 className="t-title2">Trips</h2>
           <button
-            data-testid="me-add-rec"
-            onClick={() => { setAddLockedCity(null); setAddOpen(true); }}
+            data-testid="me-add-trip"
+            onClick={() => setAddTripOpen(true)}
             className="btn-pill"
             style={{ background: "rgba(10,132,255,0.12)", color: "#0A84FF", padding: "8px 14px", fontSize: 13 }}
           >
-            <Plus size={14} /> Add a recommendation
+            <Map size={14} /> Add a trip
           </button>
         </div>
       )}
 
-      {/* Trips list */}
       {!openCityId && (
         <div className="mt-2" data-testid="trips-list">
-          {Object.keys(byCountry).length === 0 ? (
+          {allCities.length === 0 ? (
             <div className="px-6 mt-4" data-testid="me-empty">
-              <p className="t-sub muted">You haven't added any places yet. Tap "Add a recommendation" above to log your first trip.</p>
+              <p className="t-sub muted">No trips yet. Tap "Add a trip" to log a city you've been to, then add recommendations inside.</p>
             </div>
           ) : (
             Object.entries(byCountry).map(([country, cities]) => (
@@ -147,7 +186,11 @@ export default function MyProfile() {
                       <span style={{ fontSize: 22 }}>{c.flag_emoji}</span>
                       <div style={{ flex: 1 }}>
                         <div className="t-title3">{c.name}</div>
-                        <div className="t-cap muted">{c.rec_count} recommendation{c.rec_count === 1 ? "" : "s"}</div>
+                        <div className="t-cap muted">
+                          {c.rec_count > 0
+                            ? `${c.rec_count} recommendation${c.rec_count === 1 ? "" : "s"}`
+                            : "No recommendations yet"}
+                        </div>
                       </div>
                       <span className="muted">›</span>
                     </button>
@@ -159,28 +202,47 @@ export default function MyProfile() {
         </div>
       )}
 
-      {/* City detail (my own) */}
+      {/* City detail (my own trip) */}
       {openCityId && cityOpen && (
         <div data-testid="me-city-detail">
           <div className="px-4 pt-3 flex items-center justify-between gap-2">
             <button onClick={() => { setOpenCityId(null); setMyRecs([]); setCategory("all"); }}
-              style={{ background: "transparent", border: "none", color: "#0A84FF" }}>
+              style={{ background: "transparent", border: "none", color: "#0A84FF" }}
+              data-testid="me-back-trips"
+            >
               <ChevronLeft size={16} style={{ verticalAlign: "middle" }} /> All trips
             </button>
-            <button
-              data-testid="me-city-add-rec"
-              onClick={() => { setAddLockedCity(cityOpen); setAddOpen(true); }}
-              className="btn-pill"
-              style={{ background: "rgba(10,132,255,0.12)", color: "#0A84FF", padding: "8px 12px", fontSize: 13 }}
-            >
-              <Plus size={14} /> Add
-            </button>
+            <div className="flex gap-2">
+              <button
+                data-testid="me-city-add-rec"
+                onClick={() => { setEditingRec(null); setAddRecLockedCity(cityOpen); setAddRecOpen(true); }}
+                className="btn-pill"
+                style={{ background: "rgba(10,132,255,0.12)", color: "#0A84FF", padding: "8px 12px", fontSize: 13 }}
+              >
+                <Plus size={14} /> Add a recommendation
+              </button>
+              <button
+                data-testid="me-delete-trip"
+                onClick={() => deleteTrip(cityOpen.id)}
+                style={{ background: "transparent", border: "none", color: "#8E8E93", padding: 6 }}
+                title="Remove from trips"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
           </div>
           <h2 className="t-title1 px-4 mt-1">{cityOpen.flag_emoji} {cityOpen.name}</h2>
           <CategoryTabs value={category} onChange={setCategory} />
           <div className="px-4 space-y-3">
+            {myRecs.length === 0 && (
+              <div className="ios-card px-4 py-6 text-center">
+                <p className="t-sub muted">
+                  You haven't added a recommendation for {cityOpen.name} yet. Tap "Add a recommendation" above.
+                </p>
+              </div>
+            )}
             {myRecs.map((r) => (
-              <div key={r.id} className="ios-card" style={{ padding: "14px 16px" }} data-testid={`me-rec-${r.id}`}>
+              <div key={r.id} className="ios-card" style={{ padding: "14px 16px", position: "relative" }} data-testid={`me-rec-${r.id}`}>
                 <div className="flex items-start gap-3">
                   <div style={{ flex: 1 }}>
                     <div className="t-title3">{r.place_name}</div>
@@ -189,20 +251,49 @@ export default function MyProfile() {
                     <div className="t-cap tertiary mt-2">{formatMonthYear(r.created_at)}</div>
                   </div>
                   <button
-                    data-testid={`me-delete-${r.id}`}
-                    onClick={() => deleteRec(r)}
-                    style={{ background: "transparent", border: "none", color: "#8E8E93" }}
+                    data-testid={`me-rec-menu-${r.id}`}
+                    onClick={() => setMenuRecId(menuRecId === r.id ? null : r.id)}
+                    style={{ background: "transparent", border: "none", color: "#8E8E93", padding: 4 }}
+                    aria-label="More"
                   >
-                    <Trash2 size={16} />
+                    <MoreHorizontal size={18} />
                   </button>
                 </div>
+                {menuRecId === r.id && (
+                  <>
+                    <div
+                      onClick={() => setMenuRecId(null)}
+                      style={{ position: "fixed", inset: 0, zIndex: 50 }}
+                    />
+                    <div
+                      className="ios-card"
+                      style={{
+                        position: "absolute", right: 12, top: 40, zIndex: 51,
+                        padding: 4, minWidth: 160, overflow: "hidden",
+                      }}
+                      data-testid={`me-rec-menu-panel-${r.id}`}
+                    >
+                      <button
+                        data-testid={`me-edit-${r.id}`}
+                        onClick={() => startEdit(r)}
+                        className="list-row w-full text-left"
+                        style={{ background: "transparent", border: "none", borderRadius: 8 }}
+                      >
+                        <Pencil size={14} /> <span style={{ flex: 1 }}>Edit</span>
+                      </button>
+                      <button
+                        data-testid={`me-delete-${r.id}`}
+                        onClick={() => deleteRec(r)}
+                        className="list-row w-full text-left"
+                        style={{ background: "transparent", border: "none", color: "#FF453A", borderRadius: 8 }}
+                      >
+                        <Trash2 size={14} /> <span style={{ flex: 1 }}>Delete</span>
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             ))}
-            {myRecs.length === 0 && (
-              <div className="ios-card px-4 py-6 text-center t-sub muted">
-                No recommendations in this category yet.
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -242,10 +333,17 @@ export default function MyProfile() {
       />
 
       <AddRecommendationSheet
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        lockedCity={addLockedCity}
+        open={addRecOpen}
+        onClose={() => { setAddRecOpen(false); setEditingRec(null); }}
+        lockedCity={addRecLockedCity}
+        editingRec={editingRec}
         onCreated={() => { load(); if (openCityId) loadRecs(openCityId, category); }}
+      />
+
+      <AddTripSheet
+        open={addTripOpen}
+        onClose={() => setAddTripOpen(false)}
+        onAdded={() => load()}
       />
     </div>
   );

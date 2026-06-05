@@ -4,19 +4,19 @@ import BottomNav from "../components/BottomNav";
 import Fab from "../components/Fab";
 import AddRecommendationSheet from "../components/AddRecommendationSheet";
 import AddBucketListSheet from "../components/AddBucketListSheet";
+import AddTripSheet from "../components/AddTripSheet";
 
 export default function MainLayout() {
   const [recOpen, setRecOpen] = useState(false);
   const [bucketOpen, setBucketOpen] = useState(false);
+  const [tripOpen, setTripOpen] = useState(false);
   const nav = useNavigate();
   return (
     <>
       <Outlet />
       <Fab
-        // "Add a recommendation" and "Add a trip" both open the rec sheet —
-        // a trip in Freccos = a city you've been to, which is exactly a recommendation.
         onAddRec={() => setRecOpen(true)}
-        onAddTrip={() => setRecOpen(true)}
+        onAddTrip={() => setTripOpen(true)}
         onAddBucket={() => setBucketOpen(true)}
       />
       <BottomNav />
@@ -25,9 +25,13 @@ export default function MainLayout() {
         onClose={() => setRecOpen(false)}
         onCreated={() => {
           window.dispatchEvent(new Event("freccos:refresh"));
-          // Navigate to Profile so user sees their new "trip"
           nav("/me");
         }}
+      />
+      <AddTripSheet
+        open={tripOpen}
+        onClose={() => setTripOpen(false)}
+        onAdded={() => { nav("/me"); }}
       />
       <AddBucketListSheet
         open={bucketOpen}

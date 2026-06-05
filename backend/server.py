@@ -426,6 +426,13 @@ class BucketListReq(BaseModel):
     country_code: Optional[str] = None
 
 
+class TripReq(BaseModel):
+    city_id: Optional[str] = None
+    city_name: Optional[str] = None
+    country: Optional[str] = None
+    country_code: Optional[str] = None
+
+
 class SaveRecReq(BaseModel):
     recommendation_id: str  # any rec representing the place to save
 
@@ -743,16 +750,17 @@ async def get_user_profile(user_id: str, user: dict = Depends(current_user)):
     target = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
-    # Recommendations + city/country stats
-    cursor = db.recommendations.find({"user_id": user_id}, {"_id": 0})
+    # Cities = union of (cities with recommendations) and (manually-added trips)
     rec_ids_by_city: dict = {}
-    async for r in cursor:
+    async for r in db.recommendations.find({"user_id": user_id}, {"_id": 0}):
         rec_ids_by_city.setdefault(r["city_id"], []).append(r)
-    # Build cities/country counts
-    city_ids = list(rec_ids_by_city.keys())
+    trip_city_ids = set()
+    async for t in db.user_trips.find({"user_id": user_id}, {"_id": 0, "city_id": 1}):
+        trip_city_ids.add(t["city_id"])
+    all_city_ids = list(set(rec_ids_by_city.keys()) | trip_city_ids)
     cities = []
-    if city_ids:
-        async for c in db.cities.find({"id": {"$in": city_ids}}, {"_id": 0}):
+    if all_city_ids:
+        async for c in db.cities.find({"id": {"$in": all_city_ids}}, {"_id": 0}):
             cities.append(c | {"rec_count": len(rec_ids_by_city.get(c["id"], []))})
     countries = sorted({c["country"] for c in cities if c.get("country")})
     return {
@@ -900,6 +908,15 @@ async def create_recommendation(req: RecCreateReq, user: dict = Depends(current_
         "photo_url": req.photo_url, "created_at": iso(now_utc()),
     }
     await db.recommendations.insert_one(rec)
+    # Auto-create a Trip entry for this city if not already present
+    try:
+        await db.user_trips.insert_one({
+            "id": str(uuid.uuid4()),
+            "user_id": user["id"], "city_id": city["id"],
+            "created_at": iso(now_utc()),
+        })
+    except Exception:
+        pass  # already exists — unique index
     rec.pop("_id", None)
     return {**rec, "city": city}
 
@@ -1012,6 +1029,57 @@ async def list_user_city_recs(user_id: str, city_id: str, category: Optional[str
     async for r in db.recommendations.find(query, {"_id": 0}).sort("created_at", -1):
         out.append(r)
     return out
+
+
+# ----------------------- Trips (cities I've been to) -----------------------
+@api.get("/trips")
+async def list_trips(user: dict = Depends(current_user)):
+    """Cities the user has been to (explicit trips + cities where they have recs)."""
+    rec_city_ids = set()
+    rec_counts: dict = {}
+    async for r in db.recommendations.find({"user_id": user["id"]}, {"_id": 0, "city_id": 1}):
+        rec_city_ids.add(r["city_id"])
+        rec_counts[r["city_id"]] = rec_counts.get(r["city_id"], 0) + 1
+    explicit = set()
+    async for t in db.user_trips.find({"user_id": user["id"]}, {"_id": 0, "city_id": 1}):
+        explicit.add(t["city_id"])
+    all_ids = list(rec_city_ids | explicit)
+    if not all_ids:
+        return []
+    cities = {c["id"]: c async for c in db.cities.find({"id": {"$in": all_ids}}, {"_id": 0})}
+    return [{
+        "city_id": cid, "city": cities.get(cid),
+        "rec_count": rec_counts.get(cid, 0),
+    } for cid in all_ids if cid in cities]
+
+
+@api.post("/trips")
+async def add_trip(req: TripReq, user: dict = Depends(current_user)):
+    if req.city_id:
+        city = await db.cities.find_one({"id": req.city_id}, {"_id": 0})
+        if not city:
+            raise HTTPException(status_code=404, detail="City not found")
+    elif req.city_name:
+        city = await upsert_city(req.city_name, req.country, req.country_code)
+    else:
+        raise HTTPException(status_code=400, detail="city_id or city_name required")
+    try:
+        await db.user_trips.insert_one({
+            "id": str(uuid.uuid4()),
+            "user_id": user["id"], "city_id": city["id"],
+            "created_at": iso(now_utc()),
+        })
+    except Exception:
+        pass  # already a trip — idempotent
+    return {"city_id": city["id"], "city": city, "rec_count": 0}
+
+
+@api.delete("/trips/{city_id}")
+async def delete_trip(city_id: str, user: dict = Depends(current_user)):
+    # Remove explicit trip entry
+    await db.user_trips.delete_one({"user_id": user["id"], "city_id": city_id})
+    # Note: existing recommendations for this city remain unless user deletes them individually.
+    return {"ok": True}
 
 
 # ----------------------- Trip Plans / Bucket List -----------------------

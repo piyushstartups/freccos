@@ -29,13 +29,14 @@ export default function Splash() {
   );
 }
 
-export function FreccosLogo({ size = 64, color = "#6C5CE7" }) {
+export function FreccosLogo({ size = 64 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" aria-hidden>
-      <circle cx="22" cy="26" r="13" fill={color} opacity="0.45" />
-      <circle cx="40" cy="26" r="13" fill={color} opacity="0.55" />
-      <circle cx="31" cy="38" r="14" fill={color} />
-      <circle cx="31" cy="36" r="4" fill="#fff" />
-    </svg>
+    <img
+      src="/freccos-logo.png"
+      width={size}
+      height={size}
+      alt="Freccos"
+      style={{ display: "block", borderRadius: size * 0.22, objectFit: "contain" }}
+    />
   );
 }
