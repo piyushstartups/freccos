@@ -6,6 +6,7 @@ import Avatar from "../components/Avatar";
 import BottomSheet from "../components/BottomSheet";
 import AddRecommendationSheet from "../components/AddRecommendationSheet";
 import AddTripSheet from "../components/AddTripSheet";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
 import { flagForCountry } from "../lib/flags";
 import {
@@ -32,6 +33,8 @@ export default function MyProfile() {
   const [addTripOpen, setAddTripOpen] = useState(false);
   const [menuRecId, setMenuRecId] = useState(null);
   const [countryFilter, setCountryFilter] = useState(null);
+  // Confirm-dialog state: { type: 'trip'|'rec', payload: {...}, title, message }
+  const [confirm, setConfirm] = useState(null);
 
   const load = async () => {
     const [{ data: p }, { data: t }] = await Promise.all([
@@ -58,26 +61,56 @@ export default function MyProfile() {
     else try { await navigator.clipboard.writeText(text); toast.success("Invite copied"); } catch { toast("Copy failed"); }
   };
 
-  const deleteRec = async (rec) => {
+  const requestDeleteRec = (rec) => {
     setMenuRecId(null);
-    if (!window.confirm("Delete this recommendation?")) return;
-    try { await api.delete(`/recommendations/${rec.id}`); toast("Deleted"); loadRecs(openCityId, category); load(); }
-    catch { toast.error("Couldn't delete"); }
+    setConfirm({
+      type: "rec",
+      payload: rec,
+      title: "Delete this recommendation?",
+      message: `'${rec.place_name}' will be permanently removed from your profile.`,
+      confirmLabel: "Delete",
+    });
+  };
+
+  const requestDeleteTrip = (city) => {
+    setConfirm({
+      type: "trip",
+      payload: city,
+      title: `Remove ${city.name}?`,
+      message: `${city.name} will be removed from your profile, along with every recommendation you added there. This cannot be undone.`,
+      confirmLabel: "Remove",
+    });
+  };
+
+  const runConfirm = async () => {
+    if (!confirm) return;
+    const { type, payload } = confirm;
+    setConfirm(null);
+    try {
+      if (type === "rec") {
+        await api.delete(`/recommendations/${payload.id}`);
+        toast("Deleted");
+        // Re-fetch from server so UI matches DB
+        if (openCityId) await loadRecs(openCityId, category);
+        await load();
+      } else if (type === "trip") {
+        const { data } = await api.delete(`/trips/${payload.id}`);
+        toast.success(
+          data?.deleted_recommendations
+            ? `${payload.name} removed (${data.deleted_recommendations} recommendation${data.deleted_recommendations === 1 ? "" : "s"} deleted)`
+            : `${payload.name} removed`
+        );
+        setOpenCityId(null);
+        setMyRecs([]);
+        setCategory("all");
+        await load();
+      }
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Couldn't delete. Please try again.");
+    }
   };
 
   const startEdit = (rec) => { setMenuRecId(null); setEditingRec(rec); setAddRecLockedCity(null); setAddRecOpen(true); };
-
-  const deleteTrip = async (cityId, cityName) => {
-    if (!window.confirm(`Remove ${cityName || "this city"} from your profile? This will permanently delete the trip and every recommendation you added there.`)) return;
-    try {
-      await api.delete(`/trips/${cityId}`);
-      toast("Removed from your profile");
-      setOpenCityId(null);
-      setMyRecs([]);
-      setCategory("all");
-      await load();
-    } catch { toast.error("Couldn't remove"); }
-  };
 
   if (!user || !profile) return <div className="p-6 t-sub muted">Loading...</div>;
 
@@ -179,7 +212,7 @@ export default function MyProfile() {
               <button data-testid="me-city-add-rec" onClick={() => { setEditingRec(null); setAddRecLockedCity(cityOpen); setAddRecOpen(true); }} className="btn-pill" style={{ background: "rgba(10,132,255,0.12)", color: "#0A84FF", padding: "8px 12px", fontSize: 13 }}>
                 <Plus size={14} /> Add a rec
               </button>
-              <button data-testid={`me-delete-trip-${cityOpen.id}`} onClick={() => deleteTrip(cityOpen.id, cityOpen.name)} style={{ background: "transparent", border: "none", color: "#FF453A", padding: 6 }} title="Delete this city">
+              <button data-testid={`me-delete-trip-${cityOpen.id}`} onClick={() => requestDeleteTrip(cityOpen)} style={{ background: "transparent", border: "none", color: "#FF453A", padding: 6 }} title="Delete this city">
                 <Trash2 size={16} />
               </button>
             </div>
@@ -221,19 +254,6 @@ export default function MyProfile() {
                       <MoreHorizontal size={18} />
                     </button>
                   </div>
-                  {menuRecId === r.id && (
-                    <>
-                      <div onClick={() => setMenuRecId(null)} style={{ position: "fixed", inset: 0, zIndex: 50 }} />
-                      <div className="ios-card" style={{ position: "absolute", right: 12, top: 40, zIndex: 51, padding: 4, minWidth: 160 }}>
-                        <button data-testid={`me-edit-${r.id}`} onClick={() => startEdit(r)} className="list-row w-full text-left" style={{ background: "transparent", border: "none" }}>
-                          <Pencil size={14} /> Edit
-                        </button>
-                        <button data-testid={`me-delete-${r.id}`} onClick={() => deleteRec(r)} className="list-row w-full text-left" style={{ background: "transparent", border: "none", color: "#FF453A" }}>
-                          <Trash2 size={14} /> Delete
-                        </button>
-                      </div>
-                    </>
-                  )}
                 </div>
               </div>
             ))}
@@ -270,6 +290,74 @@ export default function MyProfile() {
       />
 
       <AddTripSheet open={addTripOpen} onClose={() => setAddTripOpen(false)} onAdded={() => load()} />
+
+      {/* Rec action sheet — rendered at root level so the rec card's overflow:hidden
+          stacking context can't trap it. iOS-style centered modal. */}
+      {(() => {
+        const targetRec = menuRecId ? myRecs.find((x) => x.id === menuRecId) : null;
+        if (!targetRec) return null;
+        return (
+          <div
+            data-testid="rec-action-sheet"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => { if (e.target === e.currentTarget) setMenuRecId(null); }}
+            style={{
+              position: "fixed", inset: 0, zIndex: 11000,
+              background: "rgba(0,0,0,0.35)",
+              display: "flex", alignItems: "flex-end", justifyContent: "center",
+              padding: 16,
+            }}
+          >
+            <div
+              style={{
+                width: "100%", maxWidth: 420, background: "#fff",
+                borderRadius: 14, overflow: "hidden",
+                marginBottom: "max(16px, env(safe-area-inset-bottom))",
+                boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
+              }}
+            >
+              <div style={{ padding: "14px 16px 10px", borderBottom: "1px solid #E5E5EA" }}>
+                <div style={{ fontSize: 13, color: "#8E8E93", fontWeight: 500 }}>{targetRec.place_name}</div>
+              </div>
+              <button
+                data-testid={`me-edit-${targetRec.id}`}
+                onClick={() => startEdit(targetRec)}
+                style={{
+                  width: "100%", background: "transparent", border: "none",
+                  padding: "14px 16px", display: "flex", alignItems: "center", gap: 10,
+                  fontSize: 16, color: "#1C1C1E", cursor: "pointer",
+                  borderBottom: "1px solid #E5E5EA",
+                }}
+              >
+                <Pencil size={16} /> Edit recommendation
+              </button>
+              <button
+                data-testid={`me-delete-${targetRec.id}`}
+                onClick={() => requestDeleteRec(targetRec)}
+                style={{
+                  width: "100%", background: "transparent", border: "none",
+                  padding: "14px 16px", display: "flex", alignItems: "center", gap: 10,
+                  fontSize: 16, color: "#FF453A", cursor: "pointer",
+                }}
+              >
+                <Trash2 size={16} /> Delete recommendation
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      <ConfirmDialog
+        open={!!confirm}
+        title={confirm?.title}
+        message={confirm?.message}
+        confirmLabel={confirm?.confirmLabel || "Delete"}
+        destructive
+        onConfirm={runConfirm}
+        onCancel={() => setConfirm(null)}
+        testId="me-confirm"
+      />
     </div>
   );
 }
