@@ -9,7 +9,7 @@ import React, { useEffect, useRef, useState } from "react";
 // - On release: if dragged > 80px OR flick velocity > 0.7px/ms → dismiss
 //               otherwise spring back to fully open
 // - Upward drag is clamped (no rubber-band over the top)
-export default function BottomSheet({ open, onClose, title, children, testId = "bottom-sheet" }) {
+export default function BottomSheet({ open, onClose, title, children, testId = "bottom-sheet", dragToDismiss = true }) {
   const panelRef = useRef(null);
   const startY = useRef(0);
   const lastY = useRef(0);
@@ -42,6 +42,7 @@ export default function BottomSheet({ open, onClose, title, children, testId = "
   };
 
   const onPointerDown = (e) => {
+    if (!dragToDismiss) return;
     if (!shouldStartDrag(e.target)) return;
     dragging.current = true;
     startY.current = e.clientY;
@@ -51,6 +52,7 @@ export default function BottomSheet({ open, onClose, title, children, testId = "
   };
 
   const onPointerMove = (e) => {
+    if (!dragToDismiss) return;
     if (!dragging.current) return;
     const now = performance.now();
     const dy = e.clientY - lastY.current;
@@ -107,10 +109,12 @@ export default function BottomSheet({ open, onClose, title, children, testId = "
         onPointerCancel={endDrag}
         onPointerLeave={endDrag}
       >
-        {/* Drag handle — always allows drag */}
-        <div data-drag-handle="true" style={{ padding: "2px 0 4px", cursor: "grab" }}>
-          <div className="sheet-grabber" />
-        </div>
+        {/* Drag handle — only shown when drag-to-dismiss is enabled */}
+        {dragToDismiss && (
+          <div data-drag-handle="true" style={{ padding: "2px 0 4px", cursor: "grab" }}>
+            <div className="sheet-grabber" />
+          </div>
+        )}
         {title && (
           <div className="px-4 pt-1 pb-2 flex items-center justify-between" data-drag-handle="true">
             <h2 className="t-title2">{title}</h2>

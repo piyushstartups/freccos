@@ -130,7 +130,7 @@ export default function FriendProfile() {
           onClick={() => setMenuOpen(!menuOpen)}
           aria-label="More"
           style={{
-            position: "absolute", top: 22, right: 8,
+            position: "absolute", top: "calc(var(--safe-area-top) - 6px)", right: 8,
             background: "transparent", border: "none", color: "#fff",
             width: 44, height: 44, display: "inline-flex", alignItems: "center", justifyContent: "center",
             borderRadius: 9999,

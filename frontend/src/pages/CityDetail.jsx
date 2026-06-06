@@ -75,7 +75,7 @@ export default function CityDetail() {
           aria-hidden
           style={{
             position: "absolute",
-            top: 18,
+            top: "calc(var(--safe-area-top) - 4px)",
             right: 16,
             fontSize: 32,
             lineHeight: 1,

@@ -3,7 +3,7 @@ import api from "../lib/api";
 import BottomSheet from "./BottomSheet";
 import Avatar from "./Avatar";
 import { CategoryChip } from "./CategoryChip";
-import { MapPin, ExternalLink, Share2, Bookmark, BookmarkCheck } from "lucide-react";
+import { MapPin, ExternalLink, Share2, Bookmark, BookmarkCheck, X } from "lucide-react";
 import { toast } from "sonner";
 import { formatMonthYear, photoUrl } from "../lib/utils-frec";
 
@@ -71,29 +71,47 @@ export default function PlaceSheet({ open, onClose, group, cityId, onChange }) {
   const cover = coverPhoto ? photoUrl(coverPhoto) : googlePhotoUrl;
 
   return (
-    <BottomSheet open={open} onClose={onClose} testId="place-sheet">
+    <BottomSheet open={open} onClose={onClose} testId="place-sheet" dragToDismiss={false}>
       <div style={{ paddingBottom: "max(96px, env(safe-area-inset-bottom))" }} data-testid="place-content">
-        {/* Cover */}
-        {cover ? (
-          <div
+        {/* Cover with floating close button */}
+        <div style={{ position: "relative" }}>
+          {cover ? (
+            <div
+              style={{
+                width: "100%", aspectRatio: "16 / 9",
+                background: `#1C1C1E url('${cover}') center/cover`,
+                borderBottom: "1px solid #E5E5EA",
+              }}
+              data-testid="place-cover"
+            />
+          ) : (
+            <div
+              style={{
+                width: "100%", aspectRatio: "16 / 9", background: "#1C1C1E",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: "#3a3a3c",
+              }}
+            >
+              <MapPin size={48} />
+            </div>
+          )}
+          <button
+            data-testid="place-close"
+            aria-label="Close"
+            onClick={onClose}
             style={{
-              width: "100%", aspectRatio: "16 / 9",
-              background: `#1C1C1E url('${cover}') center/cover`,
-              borderBottom: "1px solid #E5E5EA",
-            }}
-            data-testid="place-cover"
-          />
-        ) : (
-          <div
-            style={{
-              width: "100%", aspectRatio: "16 / 9", background: "#1C1C1E",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              color: "#3a3a3c",
+              position: "absolute", top: 12, right: 12,
+              width: 32, height: 32, borderRadius: 9999,
+              background: "rgba(0,0,0,0.4)", border: "none",
+              color: "#fff", cursor: "pointer",
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              backdropFilter: "blur(4px)",
+              WebkitBackdropFilter: "blur(4px)",
             }}
           >
-            <MapPin size={48} />
-          </div>
-        )}
+            <X size={18} strokeWidth={2.4} />
+          </button>
+        </div>
 
         <div className="px-4 pt-4">
           <div className="flex items-start justify-between gap-3">

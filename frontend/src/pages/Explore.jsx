@@ -30,7 +30,7 @@ export default function Explore() {
         <button
           data-testid="explore-bell"
           onClick={() => nav("/notifications")}
-          style={{ position: "absolute", right: 8, top: 18, background: "transparent", border: "none", color: "#fff",
+          style={{ position: "absolute", right: 8, top: "calc(var(--safe-area-top) - 4px)", background: "transparent", border: "none", color: "#fff",
             width: 44, height: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 9999 }}
           aria-label="Notifications"
         >
