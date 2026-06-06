@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import api from "../lib/api";
 import Avatar from "../components/Avatar";
+import PlaceSheet from "../components/PlaceSheet";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
 import { ChevronLeft, Check, X, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -12,6 +13,7 @@ export default function TripDetail() {
   const nav = useNavigate();
   const [plan, setPlan] = useState(null);
   const [category, setCategory] = useState("all");
+  const [placeOpen, setPlaceOpen] = useState(null);
 
   const load = async () => {
     const { data } = await api.get(`/trip-plans/${cityId}`);
@@ -102,14 +104,18 @@ export default function TripDetail() {
         {filtered.map((r) => (
           <div
             key={r.id}
+            role="button"
+            tabIndex={0}
+            onClick={() => setPlaceOpen(r)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setPlaceOpen(r); } }}
             className={`ios-card ${isChecked(r.id) ? "rec-checked" : ""}`}
-            style={{ padding: "14px 16px" }}
+            style={{ padding: "14px 16px", cursor: "pointer" }}
             data-testid={`trip-rec-${r.id}`}
           >
             <div className="flex items-start gap-3">
               <button
                 data-testid={`trip-check-${r.id}`}
-                onClick={() => toggleCheck(r)}
+                onClick={(e) => { e.stopPropagation(); toggleCheck(r); }}
                 style={{
                   width: 26, height: 26, borderRadius: "50%",
                   background: isChecked(r.id) ? "#30D158" : "rgba(120,120,128,0.12)",
@@ -131,7 +137,7 @@ export default function TripDetail() {
               </div>
               <button
                 data-testid={`trip-remove-${r.id}`}
-                onClick={() => removeRec(r)}
+                onClick={(e) => { e.stopPropagation(); removeRec(r); }}
                 style={{ background: "transparent", border: "none", color: "#8E8E93", padding: 4 }}
               >
                 <X size={18} />
@@ -140,6 +146,24 @@ export default function TripDetail() {
           </div>
         ))}
       </div>
+
+      <PlaceSheet
+        open={!!placeOpen}
+        onClose={() => setPlaceOpen(null)}
+        cityId={cityId}
+        group={placeOpen ? {
+          place_key: placeOpen.id,
+          place_name: placeOpen.place_name,
+          place_id: placeOpen.place_id,
+          place_address: placeOpen.place_address,
+          category: placeOpen.category,
+          photo_url: placeOpen.photo_url,
+          is_saved: true,
+          primary_rec_id: placeOpen.id,
+          contributors: [{ ...placeOpen, user: placeOpen.by_user }],
+        } : null}
+        onChange={load}
+      />
     </div>
   );
 }

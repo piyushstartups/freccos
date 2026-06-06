@@ -7,6 +7,7 @@ import BottomSheet from "../components/BottomSheet";
 import AddRecommendationSheet from "../components/AddRecommendationSheet";
 import AddTripSheet from "../components/AddTripSheet";
 import ConfirmDialog from "../components/ConfirmDialog";
+import PlaceSheet from "../components/PlaceSheet";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
 import { flagForCountry } from "../lib/flags";
 import {
@@ -33,8 +34,30 @@ export default function MyProfile() {
   const [addTripOpen, setAddTripOpen] = useState(false);
   const [menuRecId, setMenuRecId] = useState(null);
   const [countryFilter, setCountryFilter] = useState(null);
+  const [placeOpen, setPlaceOpen] = useState(null); // { group, cityId }
   // Confirm-dialog state: { type: 'trip'|'rec', payload: {...}, title, message }
   const [confirm, setConfirm] = useState(null);
+
+  // Build a PlaceSheet-compatible "group" object from a single rec.
+  const openPlaceFromRec = (r, cityId) => {
+    setPlaceOpen({
+      cityId,
+      group: {
+        place_key: r.id,
+        place_name: r.place_name,
+        place_id: r.place_id,
+        place_address: r.place_address,
+        category: r.category,
+        photo_url: r.photo_url,
+        is_saved: false,
+        primary_rec_id: r.id,
+        contributors: [{
+          ...r,
+          user: { id: user.id, name: user.name, profile_photo_url: user.profile_photo_url },
+        }],
+      },
+    });
+  };
 
   const load = async () => {
     const [{ data: p }, { data: t }] = await Promise.all([
@@ -237,7 +260,16 @@ export default function MyProfile() {
               </div>
             )}
             {myRecs.map((r) => (
-              <div key={r.id} className="ios-card" style={{ padding: 0, overflow: "hidden", position: "relative" }} data-testid={`me-rec-${r.id}`}>
+              <div
+                key={r.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => openPlaceFromRec(r, cityOpen.id)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPlaceFromRec(r, cityOpen.id); } }}
+                className="ios-card"
+                style={{ padding: 0, overflow: "hidden", position: "relative", cursor: "pointer" }}
+                data-testid={`me-rec-${r.id}`}
+              >
                 {r.photo_url && (
                   <div style={{ width: "100%", aspectRatio: "4/3", background: `#eee url('${photoUrl(r.photo_url)}') center/cover` }} />
                 )}
@@ -249,8 +281,12 @@ export default function MyProfile() {
                       {r.note && <p className="t-body mt-2">{r.note}</p>}
                       <div className="t-cap tertiary mt-2">{formatMonthYear(r.created_at)}</div>
                     </div>
-                    <button data-testid={`me-rec-menu-${r.id}`} onClick={() => setMenuRecId(menuRecId === r.id ? null : r.id)}
-                      style={{ background: "transparent", border: "none", color: "#8E8E93", padding: 4 }} aria-label="More">
+                    <button
+                      data-testid={`me-rec-menu-${r.id}`}
+                      onClick={(e) => { e.stopPropagation(); setMenuRecId(menuRecId === r.id ? null : r.id); }}
+                      style={{ background: "transparent", border: "none", color: "#8E8E93", padding: 4 }}
+                      aria-label="More"
+                    >
                       <MoreHorizontal size={18} />
                     </button>
                   </div>
@@ -357,6 +393,15 @@ export default function MyProfile() {
         onConfirm={runConfirm}
         onCancel={() => setConfirm(null)}
         testId="me-confirm"
+      />
+
+      <PlaceSheet
+        open={!!placeOpen}
+        onClose={() => setPlaceOpen(null)}
+        group={placeOpen?.group}
+        cityId={placeOpen?.cityId}
+        onEdit={(rec) => startEdit(rec)}
+        onChange={() => { if (openCityId) loadRecs(openCityId, category); }}
       />
     </div>
   );

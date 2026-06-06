@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import api from "../lib/api";
+import { useAuth } from "../lib/auth";
 import Avatar from "../components/Avatar";
+import PlaceSheet from "../components/PlaceSheet";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
 import {
-  ChevronLeft, UserCheck, UserPlus, MessageCircle, Bookmark,
+  ChevronLeft, UserCheck, UserPlus, MessageCircle,
   Instagram, MoreHorizontal, ShieldOff, Clock,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -34,13 +36,44 @@ export default function FriendProfile() {
   const { userId } = useParams();
   const nav = useNavigate();
   const [search] = useSearchParams();
+  const { user: me } = useAuth();
   const [profile, setProfile] = useState(null);
   const [openCity, setOpenCity] = useState(search.get("city"));
   const [recs, setRecs] = useState([]);
   const [category, setCategory] = useState("all");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [placeOpen, setPlaceOpen] = useState(null);
+
+  const openPlaceFromRec = (r) => {
+    setPlaceOpen({
+      cityId: r.city_id || openCity,
+      group: {
+        place_key: r.id,
+        place_name: r.place_name,
+        place_id: r.place_id,
+        place_address: r.place_address,
+        category: r.category,
+        photo_url: r.photo_url,
+        is_saved: false,
+        primary_rec_id: r.id,
+        contributors: [{
+          ...r,
+          user: { id: profile?.id, name: profile?.name, profile_photo_url: profile?.profile_photo_url },
+        }],
+      },
+    });
+  };
+
+  // If the viewed profile is the current user, redirect to /me so they never
+  // see a "Follow yourself" view.
+  useEffect(() => {
+    if (me?.id && userId === me.id) {
+      nav("/me", { replace: true });
+    }
+  }, [me?.id, userId, nav]);
 
   const load = async () => {
+    if (me?.id && userId === me.id) return; // redirect effect handles this
     try {
       const { data } = await api.get(`/users/${userId}`);
       setProfile(data);
@@ -92,11 +125,6 @@ export default function FriendProfile() {
     if (!cityOpen) return;
     const text = `Hey! I was checking out your Freccos recommendations for ${cityOpen.name} — had a quick question!`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
-  };
-
-  const saveRec = async (rec) => {
-    try { await api.post(`/trip-plans/${rec.city_id}/save`, { recommendation_id: rec.id }); toast.success("Saved to trip plan"); }
-    catch (e) { toast.error(e?.response?.data?.detail || "Couldn't save"); }
   };
 
   if (!profile) return <div className="p-6 t-sub muted">Loading...</div>;
@@ -287,7 +315,16 @@ export default function FriendProfile() {
           <div className="px-4 space-y-3">
             {recs.length === 0 && <div className="ios-card px-4 py-6 text-center t-sub muted">No recommendations here yet.</div>}
             {recs.map((r) => (
-              <div key={r.id} className="ios-card" style={{ padding: "14px 16px" }}>
+              <div
+                key={r.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => openPlaceFromRec(r)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPlaceFromRec(r); } }}
+                className="ios-card"
+                style={{ padding: "14px 16px", cursor: "pointer" }}
+                data-testid={`friend-rec-${r.id}`}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div style={{ flex: 1 }}>
                     <div className="t-title3">{r.place_name}</div>
@@ -295,15 +332,20 @@ export default function FriendProfile() {
                     {r.note && <p className="t-body mt-2">{r.note}</p>}
                     <div className="t-cap tertiary mt-2">{formatMonthYear(r.created_at)}</div>
                   </div>
-                  <button onClick={() => saveRec(r)} className="chip" style={{ background: "rgba(120,120,128,0.08)", color: "#0A84FF", fontWeight: 600, padding: "8px 12px" }}>
-                    <Bookmark size={14} /> Save
-                  </button>
                 </div>
               </div>
             ))}
           </div>
         </div>
       )}
+
+      <PlaceSheet
+        open={!!placeOpen}
+        onClose={() => setPlaceOpen(null)}
+        group={placeOpen?.group}
+        cityId={placeOpen?.cityId}
+        onChange={() => { if (openCity) loadCityRecs(openCity, category); }}
+      />
     </div>
   );
 }

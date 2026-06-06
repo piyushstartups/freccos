@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from "react";
 import api from "../lib/api";
+import { useAuth } from "../lib/auth";
 import BottomSheet from "./BottomSheet";
 import Avatar from "./Avatar";
 import { CategoryChip } from "./CategoryChip";
-import { MapPin, ExternalLink, Share2, Bookmark, BookmarkCheck, X } from "lucide-react";
+import { MapPin, ExternalLink, Share2, Bookmark, BookmarkCheck, X, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { formatMonthYear, photoUrl } from "../lib/utils-frec";
 
-export default function PlaceSheet({ open, onClose, group, cityId, onChange }) {
+export default function PlaceSheet({ open, onClose, group, cityId, onChange, onEdit }) {
+  const { user: me } = useAuth();
   const [details, setDetails] = useState(null);
   const [allContribs, setAllContribs] = useState(null);
   const [saveCount, setSaveCount] = useState(0);
@@ -24,7 +26,6 @@ export default function PlaceSheet({ open, onClose, group, cityId, onChange }) {
       setAllContribs(data.contributors || group.contributors);
       setSaveCount(data.save_count || 0);
     }).catch(() => setAllContribs(group.contributors));
-    // Quietly fetch place details only to obtain the cover photo + google_maps_uri.
     if (group.place_id) {
       api.get(`/places/details/${group.place_id}`)
         .then(({ data }) => setDetails(data))
@@ -33,11 +34,15 @@ export default function PlaceSheet({ open, onClose, group, cityId, onChange }) {
   }, [open, group, cityId]);
 
   if (!group) return null;
-  const coverPhoto = (allContribs || group.contributors || [])
-    .map((c) => c.photo_url).find(Boolean);
+  const contribs = allContribs || group.contributors || [];
+  const coverPhoto = contribs.map((c) => c.photo_url).find(Boolean);
   const googlePhotoUrl = details?.photo_name
     ? `${process.env.REACT_APP_BACKEND_URL}/api/places/photo?name=${encodeURIComponent(details.photo_name)}&max_width=1024`
     : null;
+
+  // Does this place belong to the current user (i.e. their own rec)?
+  const isOwn = !!(me?.id && contribs.some((c) => (c.user?.id || c.id) === me.id));
+  const myContrib = contribs.find((c) => (c.user?.id || c.id) === me?.id);
 
   const toggleSave = async () => {
     try {
@@ -56,12 +61,18 @@ export default function PlaceSheet({ open, onClose, group, cityId, onChange }) {
     } catch (e) { toast.error(e?.response?.data?.detail || "Couldn't update"); }
   };
 
+  const handleEdit = () => {
+    if (!onEdit || !myContrib) return;
+    onEdit(myContrib);
+    onClose?.();
+  };
+
   const share = async () => {
-    const text = `Check out ${group.place_name} on Freccos — recommended by ${(allContribs || group.contributors)?.[0]?.user?.name || "a friend"} · freccos.com`;
+    const text = `Check out ${group.place_name} on Freccos — recommended by ${contribs[0]?.user?.name || contribs[0]?.name || "a friend"} · freccos.com`;
     try {
       if (navigator.share) await navigator.share({ text });
       else { await navigator.clipboard.writeText(text); toast.success("Copied to clipboard"); }
-    } catch { /* user cancelled or clipboard unavailable */ }
+    } catch { /* user cancelled */ }
   };
 
   const mapsUrl = details?.google_maps_uri
@@ -72,7 +83,8 @@ export default function PlaceSheet({ open, onClose, group, cityId, onChange }) {
 
   return (
     <BottomSheet open={open} onClose={onClose} testId="place-sheet" dragToDismiss={false}>
-      <div style={{ paddingBottom: "max(96px, env(safe-area-inset-bottom))" }} data-testid="place-content">
+      {/* Scrollable content (everything except the sticky bottom action) */}
+      <div data-testid="place-content">
         {/* Cover with floating close button */}
         <div style={{ position: "relative" }}>
           {cover ? (
@@ -113,7 +125,7 @@ export default function PlaceSheet({ open, onClose, group, cityId, onChange }) {
           </button>
         </div>
 
-        <div className="px-4 pt-4">
+        <div className="px-4 pt-4" style={{ paddingBottom: "calc(96px + var(--safe-area-bottom))" }}>
           <div className="flex items-start justify-between gap-3">
             <div style={{ flex: 1, minWidth: 0 }}>
               <h2 className="t-title1">{group.place_name}</h2>
@@ -124,15 +136,41 @@ export default function PlaceSheet({ open, onClose, group, cityId, onChange }) {
             </button>
           </div>
 
+          {/* Recommended by — avatars + names directly under the title for instant social context */}
+          {contribs.length > 0 && (
+            <div className="mt-3" data-testid="place-recommended-by">
+              <div className="t-cap muted" style={{ marginBottom: 6 }}>
+                {isOwn && contribs.length === 1
+                  ? "Recommended by you"
+                  : `Recommended by ${contribs.length} ${contribs.length === 1 ? "friend" : "friends"}`}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                {contribs.slice(0, 5).map((c) => {
+                  const user = c.user || c;
+                  return (
+                    <div key={user.id || c.rec_id} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <Avatar user={user} size={28} />
+                      <span className="t-sub" style={{ fontWeight: 500 }}>{user.name?.split(" ")[0]}</span>
+                    </div>
+                  );
+                })}
+                {contribs.length > 5 && (
+                  <span className="t-cap muted">+{contribs.length - 5} more</span>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="divider mt-4" />
 
+          {/* Friend notes */}
           <div className="mt-4">
-            <h3 className="t-title3 mb-2">What your friends say</h3>
+            <h3 className="t-title3 mb-2">{isOwn && contribs.length === 1 ? "Your note" : "What your friends say"}</h3>
             <div className="space-y-3">
-              {(allContribs || group.contributors).map((c) => (
+              {contribs.map((c) => (
                 <div key={c.id || c.rec_id || c.user?.id} className="ios-card" style={{ padding: "12px 14px" }} data-testid="place-contributor">
                   <div className="flex items-center gap-2">
-                    {c.user ? <Avatar user={c.user} size={28} /> : <Avatar user={c} size={28} />}
+                    <Avatar user={c.user || c} size={28} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="t-sub"><strong>{c.user?.name || c.name}</strong></div>
                       {c.created_at && <div className="t-cap muted">{formatMonthYear(c.created_at)}</div>}
@@ -171,12 +209,33 @@ export default function PlaceSheet({ open, onClose, group, cityId, onChange }) {
             Saved by {saveCount} {saveCount === 1 ? "person" : "people"} on Freccos
           </div>
         </div>
+      </div>
 
-        {/* Sticky save button */}
-        <div style={{
-          position: "sticky", bottom: 0, background: "#fff",
-          padding: "12px 16px", borderTop: "1px solid #E5E5EA",
-        }}>
+      {/* Fixed bottom action — Save (others' recs) or Edit (own rec). Anchored
+          via position:fixed so it stays put as the sheet content scrolls. */}
+      <div
+        style={{
+          position: "fixed",
+          left: "50%",
+          transform: "translateX(-50%)",
+          bottom: 0,
+          width: "100%",
+          maxWidth: 430,
+          background: "#fff",
+          padding: "12px 16px calc(12px + var(--safe-area-bottom))",
+          borderTop: "1px solid #E5E5EA",
+          zIndex: 10010,
+        }}
+      >
+        {isOwn ? (
+          <button
+            data-testid="place-edit"
+            onClick={handleEdit}
+            className="btn-pill w-full btn-primary"
+          >
+            <Pencil size={16} /> Edit recommendation
+          </button>
+        ) : (
           <button
             data-testid="place-save"
             onClick={toggleSave}
@@ -190,7 +249,7 @@ export default function PlaceSheet({ open, onClose, group, cityId, onChange }) {
             {saved ? <BookmarkCheck size={16} /> : <Bookmark size={16} />}
             {saved ? "Saved" : "Save to trip plan"}
           </button>
-        </div>
+        )}
       </div>
     </BottomSheet>
   );

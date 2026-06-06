@@ -248,6 +248,54 @@ app = FastAPI(title="Freccos API")
 api = APIRouter(prefix="/api")
 
 
+# One-shot manual cleanup. These IDs were requested for permanent removal from
+# the production database. The block is idempotent — if none of these IDs exist
+# (e.g. preview DB, or already deleted on a prior boot) it's a no-op.
+_PURGE_USER_IDS = (
+    "0f662fb4-12d3-42f2-9900-76c1a3758b97",
+    "72b72574-2293-4df2-83d1-eece251ef0d2",
+    "96c8f404-159d-489f-9a55-c54e379956f7",
+    "c2ffa2b3-fb3f-44dc-a152-6a70868698af",
+    "e7393e71-9d26-4e6d-b438-ce7453ed363e",
+    "9288cd31-2135-4ee8-93c9-d80725144d1e",
+    "d5cdaab9-9f90-43ff-9a29-cca61afd0b58",
+    "bbf6b2e0-29a0-4b03-98a1-11f575900d31",
+    "b158b6bb-8a56-42c6-b763-fe409afd460c",
+    "c32dbf97-186c-4369-bfc2-227eb08c2f8f",
+    "2b09927d-3fd5-4365-8084-73684afd542b",
+    "ed3336e4-15dc-452f-b337-c23449d3f7f5",
+    "38ad3870-1fae-4f6b-83f0-4c11a6950750",
+    "102c760b-eee4-4a52-8a6e-a67637787c03",
+)
+
+
+async def _purge_users(ids: tuple):
+    if not ids:
+        return
+    id_list = list(ids)
+    # Only act on IDs that actually exist (avoids logging noise on clean DBs)
+    existing = [u["id"] async for u in db.users.find({"id": {"$in": id_list}}, {"_id": 0, "id": 1})]
+    if not existing:
+        return
+    res = await db.users.delete_many({"id": {"$in": existing}})
+    await db.users.update_many({}, {"$pull": {
+        "following": {"$in": existing},
+        "followers": {"$in": existing},
+        "blocked": {"$in": existing},
+    }})
+    await db.recommendations.delete_many({"user_id": {"$in": existing}})
+    await db.user_trips.delete_many({"user_id": {"$in": existing}})
+    await db.trip_plans.delete_many({"user_id": {"$in": existing}})
+    await db.follows.delete_many({"$or": [{"follower_id": {"$in": existing}}, {"following_id": {"$in": existing}}]})
+    await db.follow_requests.delete_many({"$or": [{"requester_id": {"$in": existing}}, {"target_id": {"$in": existing}}]})
+    await db.notifications.delete_many({"$or": [{"user_id": {"$in": existing}}, {"actor_id": {"$in": existing}}]})
+    await db.user_sessions.delete_many({"user_id": {"$in": existing}})
+    await db.password_reset_tokens.delete_many({"user_id": {"$in": existing}})
+    # Also clear any saved_recs in other users' trip plans that reference deleted users
+    await db.trip_plans.update_many({}, {"$pull": {"saved_recs": {"original_user_id": {"$in": existing}}}})
+    print(f"[startup] purged {res.deleted_count} flagged user(s) and cascade-deleted their data")
+
+
 async def _dedup_pair(collection_name: str, key1: str, key2: str):
     """Remove duplicate rows that share the same (key1, key2) pair, keeping the
     most recently inserted document. Used at startup to safely apply a unique
@@ -277,6 +325,8 @@ async def _dedup_pair(collection_name: str, key1: str, key2: str):
 
 @app.on_event("startup")
 async def startup():
+    # One-time purge of explicitly-flagged user IDs (idempotent)
+    await _purge_users(_PURGE_USER_IDS)
     # Indexes
     await db.users.create_index("email", unique=True)
     await db.users.create_index("invite_code", unique=True)
@@ -596,6 +646,7 @@ async def register(req: RegisterReq, response: Response):
         "password_hash": hash_password(req.password),
         "profile_photo_url": None, "bio": "",
         "invite_code": new_code,
+        "is_private": True,  # Private by default — users can switch to public in Settings
         "following": following,
         "followers": followers,
         "auth_provider": "password", "google_id": None,
@@ -712,7 +763,9 @@ async def google_session(req: GoogleSessionReq, response: Response):
         user = {
             "id": user_id, "name": name, "email": email,
             "password_hash": None, "profile_photo_url": picture, "bio": "",
-            "invite_code": new_code, "following": [], "followers": [],
+            "invite_code": new_code,
+            "is_private": True,  # Private by default
+            "following": [], "followers": [],
             "auth_provider": "google", "google_id": data.get("id"),
             "created_at": now_iso,
         }
@@ -1257,8 +1310,12 @@ async def get_city(city_id: str, user: dict = Depends(current_user)):
 
 @api.get("/explore/cities")
 async def explore_cities(user: dict = Depends(current_user)):
-    """Cities where at least one followed user has a recommendation."""
-    following_ids = user.get("following", []) + [user["id"]]
+    """Cities where at least one followed user has a recommendation.
+    The current user's own recs are intentionally excluded — Explore is for
+    discovering what your people have been to, not your own content."""
+    following_ids = user.get("following", [])
+    if not following_ids:
+        return []
     pipeline = [
         {"$match": {"user_id": {"$in": following_ids}}},
         {"$group": {"_id": "$city_id", "user_ids": {"$addToSet": "$user_id"}, "count": {"$sum": 1}}},
@@ -1284,7 +1341,10 @@ async def explore_cities(user: dict = Depends(current_user)):
 
 @api.get("/explore/cities/{city_id}/friends")
 async def explore_city_friends(city_id: str, user: dict = Depends(current_user)):
-    following_ids = user.get("following", []) + [user["id"]]
+    """Friends with recs in this city. Excludes the current user."""
+    following_ids = user.get("following", [])
+    if not following_ids:
+        return []
     pipeline = [
         {"$match": {"city_id": city_id, "user_id": {"$in": following_ids}}},
         {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
@@ -1407,8 +1467,11 @@ async def _user_saved_place_keys(user_id: str, city_id: str) -> set:
 @api.get("/cities/{city_id}/recommendations")
 async def list_city_recommendations(city_id: str, category: Optional[str] = None,
                                     user: dict = Depends(current_user)):
-    """Returns places (grouped if 2+ followed users recommended the same place)."""
-    following_ids = user.get("following", []) + [user["id"]]
+    """Returns places (grouped if 2+ followed users recommended the same place).
+    Excludes the current user's own recs — those belong on the user's profile."""
+    following_ids = user.get("following", [])
+    if not following_ids:
+        return []
     query = {"city_id": city_id, "user_id": {"$in": following_ids}}
     if category and category != "all":
         query["category"] = category
