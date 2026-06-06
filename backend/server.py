@@ -754,11 +754,18 @@ async def search_users(q: str = "", user: dict = Depends(current_user)):
             continue
         raw.append(u)
     stats = await user_travel_stats([u["id"] for u in raw])
+    # Batch-fetch all pending follow requests at once (was N+1 per private user)
+    private_ids = [u["id"] for u in raw if u.get("is_private") and user["id"] not in u.get("followers", [])]
+    pending_set: set = set()
+    if private_ids:
+        async for fr in db.follow_requests.find(
+            {"requester_id": user["id"], "target_id": {"$in": private_ids}},
+            {"_id": 0, "target_id": 1},
+        ):
+            pending_set.add(fr["target_id"])
     for u in raw:
         is_following = user["id"] in u.get("followers", [])
-        pending = False
-        if u.get("is_private") and not is_following:
-            pending = bool(await db.follow_requests.find_one({"requester_id": user["id"], "target_id": u["id"]}))
+        pending = (u["id"] in pending_set) if (u.get("is_private") and not is_following) else False
         s = stats.get(u["id"], {"city_count": 0, "country_count": 0})
         results.append({**public_user_brief(u),
                         "is_following": is_following,
@@ -1081,23 +1088,35 @@ async def discover(user: dict = Depends(current_user)):
         users_by_id = {u["id"]: u async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "password_hash": 0}).limit(200)}
         valid_ids = [uid for uid in user_ids if uid in users_by_id and my_id not in users_by_id[uid].get("blocked", [])]
         stats = await user_travel_stats(valid_ids)
-        # latest rec per user
+        # latest rec per user — collect first, then batch-fetch cities (was N+1)
         latest_by_user = {}
+        rec_city_ids = []
         async for r in db.recommendations.find({"user_id": {"$in": valid_ids}}, {"_id": 0}).sort("created_at", -1).limit(500):
             if r["user_id"] not in latest_by_user:
-                city = await db.cities.find_one({"id": r["city_id"]}, {"_id": 0, "name": 1, "country": 1})
-                latest_by_user[r["user_id"]] = {
-                    "place_name": r["place_name"],
-                    "city_name": city.get("name") if city else None,
-                }
+                latest_by_user[r["user_id"]] = {"place_name": r["place_name"], "_city_id": r["city_id"]}
+                rec_city_ids.append(r["city_id"])
+        city_name_by_id: dict = {}
+        if rec_city_ids:
+            async for c in db.cities.find({"id": {"$in": list(set(rec_city_ids))}}, {"_id": 0, "id": 1, "name": 1, "country": 1}):
+                city_name_by_id[c["id"]] = c.get("name")
+        for uid, lr in latest_by_user.items():
+            lr["city_name"] = city_name_by_id.get(lr.pop("_city_id"))
+        # Batch-fetch pending follow requests for the private users we're enriching (was N+1)
+        private_ids = [uid for uid in valid_ids
+                       if users_by_id[uid].get("is_private") and my_id not in users_by_id[uid].get("followers", [])]
+        pending_set: set = set()
+        if private_ids:
+            async for fr in db.follow_requests.find(
+                {"requester_id": my_id, "target_id": {"$in": private_ids}},
+                {"_id": 0, "target_id": 1},
+            ):
+                pending_set.add(fr["target_id"])
         out = []
         for uid in valid_ids:
             u = users_by_id[uid]
             s = stats.get(uid, {"city_count": 0, "country_count": 0})
             is_following = my_id in u.get("followers", [])
-            request_pending = False
-            if u.get("is_private") and not is_following:
-                request_pending = bool(await db.follow_requests.find_one({"requester_id": my_id, "target_id": uid}))
+            request_pending = (uid in pending_set) if (u.get("is_private") and not is_following) else False
             out.append({
                 **public_user_brief(u),
                 "city_count": s["city_count"],
@@ -1144,15 +1163,27 @@ async def discover(user: dict = Depends(current_user)):
     bucket_users = []
     bucket_match_city = {}
     if bucket_city_ids:
-        async for r in db.recommendations.find({"city_id": {"$in": list(bucket_city_ids)}}, {"_id": 0, "user_id": 1, "city_id": 1}).limit(500):
+        # Collect candidate (user_id, city_id) pairs first, then batch-fetch city names (was N+1)
+        candidates = []
+        async for r in db.recommendations.find(
+            {"city_id": {"$in": list(bucket_city_ids)}},
+            {"_id": 0, "user_id": 1, "city_id": 1},
+        ).limit(500):
             uid = r["user_id"]
             if uid in seen or uid in bucket_match_city:
                 continue
-            city = await db.cities.find_one({"id": r["city_id"]}, {"_id": 0, "name": 1})
-            bucket_match_city[uid] = {"matched_city": city.get("name") if city else None}
-            bucket_users.append(uid)
-            if len(bucket_users) >= 20:
+            bucket_match_city[uid] = {"_city_id": r["city_id"]}
+            candidates.append(uid)
+            if len(candidates) >= 20:
                 break
+        city_name_by_id: dict = {}
+        wanted = list({v["_city_id"] for v in bucket_match_city.values()})
+        if wanted:
+            async for c in db.cities.find({"id": {"$in": wanted}}, {"_id": 0, "id": 1, "name": 1}):
+                city_name_by_id[c["id"]] = c.get("name")
+        for uid, v in bucket_match_city.items():
+            v["matched_city"] = city_name_by_id.get(v.pop("_city_id"))
+        bucket_users = candidates
     bucket = await enrich(bucket_users, bucket_match_city)
 
     # 4. Recently joined (last 30 days)
