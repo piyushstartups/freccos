@@ -23,11 +23,11 @@ export default function Splash() {
       }}
       data-testid="splash"
     >
-      <FreccosLogo size={80} />
-      <div style={{ marginTop: 18 }}>
+      <FreccosLogo size={72} />
+      <div style={{ marginTop: 22 }}>
         <Wordmark size={42} color="#fff" />
       </div>
-      <p className="t-sub mt-2" style={{ color: "#8E8E93" }}>The places your friends actually love.</p>
+      <p className="t-sub mt-3" style={{ color: "#8E8E93" }}>The places your friends actually love.</p>
     </div>
   );
 }

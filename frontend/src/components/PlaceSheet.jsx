@@ -3,7 +3,7 @@ import api from "../lib/api";
 import BottomSheet from "./BottomSheet";
 import Avatar from "./Avatar";
 import { CategoryChip } from "./CategoryChip";
-import { Star, MapPin, ExternalLink, Share2, MoreHorizontal, Bookmark, BookmarkCheck } from "lucide-react";
+import { Star, MapPin, ExternalLink, Share2, Bookmark, BookmarkCheck } from "lucide-react";
 import { toast } from "sonner";
 import { formatMonthYear, photoUrl } from "../lib/utils-frec";
 
@@ -128,10 +128,6 @@ export default function PlaceSheet({ open, onClose, group, cityId, onChange }) {
               <button onClick={share} aria-label="Share" data-testid="place-share"
                 style={{ background: "rgba(120,120,128,0.12)", border: "none", borderRadius: 9999, padding: 8, color: "#1C1C1E" }}>
                 <Share2 size={16} />
-              </button>
-              <button onClick={() => toast("Reported — thanks for letting us know")} aria-label="More" data-testid="place-more"
-                style={{ background: "rgba(120,120,128,0.12)", border: "none", borderRadius: 9999, padding: 8, color: "#1C1C1E" }}>
-                <MoreHorizontal size={16} />
               </button>
             </div>
           </div>

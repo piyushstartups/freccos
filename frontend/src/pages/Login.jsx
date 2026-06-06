@@ -39,12 +39,12 @@ export default function Login() {
         data-testid="login-hero"
       >
         <div style={{ display: "flex", justifyContent: "center" }}>
-          <FreccosLogo size={88} />
+          <FreccosLogo size={72} />
         </div>
-        <div style={{ marginTop: 16 }}>
+        <div style={{ marginTop: 22 }}>
           <Wordmark size={42} color="#fff" />
         </div>
-        <p className="t-sub mt-1" style={{ color: "#8E8E93" }}>The places your friends actually love.</p>
+        <p className="t-sub mt-2" style={{ color: "#8E8E93" }}>The places your friends actually love.</p>
       </div>
       <form onSubmit={submit} style={{ padding: "28px 16px", flex: 1 }}>
         <h2 className="t-title1 mb-4">Welcome back</h2>

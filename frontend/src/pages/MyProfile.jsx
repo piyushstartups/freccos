@@ -6,8 +6,6 @@ import Avatar from "../components/Avatar";
 import BottomSheet from "../components/BottomSheet";
 import AddRecommendationSheet from "../components/AddRecommendationSheet";
 import AddTripSheet from "../components/AddTripSheet";
-import Wordmark from "../components/Wordmark";
-import { FreccosLogo } from "./Splash";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
 import { flagForCountry } from "../lib/flags";
 import {
@@ -132,10 +130,10 @@ export default function MyProfile() {
           {allCities.length === 0 && (
             <div className="px-6 mt-6" data-testid="me-empty">
               <h3 className="t-title2 mt-4">Your travels start here.</h3>
-              <p className="t-sub muted mt-1">Add your first place and start building your travel story.</p>
-              <button onClick={() => { setEditingRec(null); setAddRecLockedCity(null); setAddRecOpen(true); }}
+              <p className="t-sub muted mt-1">Add your first trip to start building your travel story.</p>
+              <button onClick={() => setAddTripOpen(true)}
                 className="btn-pill btn-primary mt-4" data-testid="me-empty-add">
-                <Plus size={16} /> Add a place
+                <Map size={16} /> Add a trip
               </button>
             </div>
           )}
@@ -286,15 +284,16 @@ function ProfileHero({ profile, cityCount, countryCount, countries, milestones, 
         background: "radial-gradient(circle at 20% 30%, #2c2c2e 0 35%, transparent 35%), radial-gradient(circle at 80% 60%, #2c2c2e 0 30%, transparent 30%), radial-gradient(circle at 50% 80%, #2c2c2e 0 25%, transparent 25%)",
       }} />
       <div style={{ position: "relative" }}>
-        <div className="flex items-center justify-between">
-          <FreccosLogo size={36} />
+        <div className="flex items-center justify-end">
           <button data-testid="settings-btn" onClick={onSettings}
-            style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", padding: 8, borderRadius: 9999 }}
+            style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#fff",
+              width: 44, height: 44, display: "inline-flex", alignItems: "center", justifyContent: "center",
+              borderRadius: 9999 }}
             aria-label="Settings">
-            <Settings size={16} />
+            <Settings size={24} />
           </button>
         </div>
-        <div className="flex items-center gap-3 mt-4">
+        <div className="flex items-center gap-3 mt-2">
           <Avatar user={profile} size={80} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <h1 className="t-title1" style={{ color: "#fff" }}>
@@ -469,6 +468,21 @@ function SettingsSheet({ open, onClose, user, onUpdated, onLogout, onBlocked }) 
             </button>
             <button data-testid="settings-logout" className="list-row w-full text-left ios-card" onClick={onLogout} style={{ border: "none", color: "#FF453A" }}>
               <LogOut size={16} /> <span style={{ flex: 1 }}>Log out</span>
+            </button>
+            <button
+              data-testid="settings-delete"
+              className="list-row w-full text-left ios-card"
+              style={{ border: "none", color: "#FF453A", marginTop: 24 }}
+              onClick={async () => {
+                if (!window.confirm("Delete your account? This will permanently delete all your recommendations, trips, and profile. This cannot be undone.")) return;
+                try {
+                  await api.delete("/users/me");
+                  toast.success("Account deleted");
+                  window.location.href = "/login";
+                } catch { toast.error("Couldn't delete account"); }
+              }}
+            >
+              <Trash2 size={16} /> <span style={{ flex: 1 }}>Delete account</span>
             </button>
           </div>
         )}

@@ -1,160 +1,126 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import api from "../lib/api";
 import Avatar from "../components/Avatar";
-import HeaderBrand from "../components/HeaderBrand";
-import { Search, UserPlus, UserCheck, Clock, Compass, Sparkles, Phone } from "lucide-react";
+import { useAuth } from "../lib/auth";
+import { Search, UserPlus, UserCheck, Clock, Share2 } from "lucide-react";
 import { toast } from "sonner";
 
+const TABS = [
+  { id: "all", label: "All" },
+  { id: "friends_of_friends", label: "Friends of friends" },
+  { id: "active_this_week", label: "Active" },
+  { id: "recently_joined", label: "New" },
+];
+
 export default function People() {
+  const { user } = useAuth();
   const [q, setQ] = useState("");
-  const [searchResults, setSearchResults] = useState(null);
-  const [discover, setDiscover] = useState(null);
+  const [tab, setTab] = useState("all");
+  const [all, setAll] = useState([]);
+  const [discover, setDiscover] = useState({});
 
-  const loadDiscover = async () => {
+  const loadAll = useCallback(async () => {
     try {
-      const { data } = await api.get("/users/me/discover");
-      setDiscover(data);
-    } catch { setDiscover({}); }
-  };
-
-  useEffect(() => { loadDiscover(); }, []);
-
-  useEffect(() => {
-    if (!q) { setSearchResults(null); return; }
-    const t = setTimeout(async () => {
-      try {
-        const { data } = await api.get("/users/search", { params: { q } });
-        setSearchResults(data);
-      } catch { setSearchResults([]); }
-    }, 220);
-    return () => clearTimeout(t);
+      const { data } = await api.get("/users/search", { params: q ? { q } : {} });
+      setAll(data);
+    } catch { setAll([]); }
   }, [q]);
 
-  const toggleFollow = async (u, fromList, refresh) => {
+  const loadDiscover = useCallback(async () => {
+    try { const { data } = await api.get("/users/me/discover"); setDiscover(data || {}); }
+    catch { setDiscover({}); }
+  }, []);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => { loadDiscover(); }, [loadDiscover]);
+
+  const toggleFollow = async (u) => {
     try {
       if (u.is_following) {
         if (!window.confirm(`Unfollow ${u.name}?`)) return;
         await api.post(`/users/${u.id}/unfollow`);
+        toast(`Unfollowed ${u.name}`);
+      } else if (u.request_pending) {
+        if (!window.confirm(`Cancel follow request to ${u.name}?`)) return;
+        await api.post(`/users/${u.id}/unfollow`);
+        toast("Request cancelled");
       } else {
         const { data } = await api.post(`/users/${u.id}/follow`);
         if (data.status === "requested") toast.success(`Follow request sent to ${u.name}`);
         else toast.success(`Now following ${u.name}`);
       }
-      refresh?.();
-      loadDiscover();
+      // Refresh both views so state is consistent everywhere
+      await Promise.all([loadAll(), loadDiscover()]);
     } catch { toast.error("Couldn't update follow"); }
   };
 
-  const requestContacts = async () => {
-    if (!("contacts" in navigator) || !navigator.contacts?.select) {
-      toast("Contacts permission isn't available on this device.");
-      return;
-    }
-    try {
-      const props = ["name"]; const opts = { multiple: true };
-      const picked = await navigator.contacts.select(props, opts);
-      toast.success(`Found ${picked.length} contacts — we'll match these against Freccos in a moment.`);
-    } catch { toast("Contacts permission was denied."); }
+  const shareInvite = async () => {
+    const text = `Join me on Freccos! Use my code: ${user?.invite_code} — freccos.com`;
+    if (navigator.share) { try { await navigator.share({ text }); } catch { /* cancelled */ } }
+    else { try { await navigator.clipboard.writeText(text); toast.success("Invite copied"); } catch { toast("Copy failed"); } }
   };
+
+  // Filter the active tab's list. Search bar applies to all tabs.
+  const baseList = tab === "all" ? all : (discover[tab] || []);
+  const lowerQ = q.toLowerCase();
+  const list = q ? baseList.filter((u) => u.name?.toLowerCase().includes(lowerQ)) : baseList;
 
   return (
     <div className="pb-32 fade-in" data-testid="people-page">
-      <HeaderBrand title="People" subtitle="Discover travellers worth following." />
+      <div style={{ background: "#1C1C1E", color: "#fff", padding: "28px 16px 16px", textAlign: "center" }}>
+        <h1 className="t-large" style={{ color: "#fff" }}>People</h1>
+        <p className="t-sub" style={{ color: "#8E8E93" }}>Discover travellers worth following.</p>
+      </div>
 
       <div className="px-4 py-3" style={{ position: "sticky", top: 0, background: "#F2F2F7", zIndex: 5 }}>
         <div style={{ position: "relative" }}>
           <Search size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#8E8E93" }} />
-          <input
-            data-testid="people-search"
-            className="ios-input"
-            placeholder="Search people..."
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            style={{ paddingLeft: 36, background: "#fff" }}
-          />
+          <input data-testid="people-search" className="ios-input" placeholder="Search people..."
+            value={q} onChange={(e) => setQ(e.target.value)} style={{ paddingLeft: 36, background: "#fff" }} />
+        </div>
+        <div className="flex gap-2 mt-3 overflow-x-auto" style={{ scrollbarWidth: "none" }} data-testid="people-tabs">
+          {TABS.map((t) => (
+            <button key={t.id} data-testid={`people-tab-${t.id}`}
+              onClick={() => setTab(t.id)}
+              className={`chip ${tab === t.id ? "chip-active" : "chip-inactive"} whitespace-nowrap`}
+              style={{ padding: "8px 14px" }}>
+              {t.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Search results */}
-      {searchResults !== null && (
-        <Section title="Results">
-          {searchResults.length === 0 ? (
-            <EmptyMini>No one matches &ldquo;{q}&rdquo; yet.</EmptyMini>
-          ) : (
-            <PeopleList users={searchResults} onToggle={(u) => toggleFollow(u, "search", () => setQ(q))} />
-          )}
-        </Section>
+      {tab === "all" && (
+        <div className="ios-card mx-4 px-4 py-3 flex items-center gap-3 mt-2" data-testid="people-invite-card">
+          <Share2 size={18} color="#0A84FF" />
+          <div style={{ flex: 1 }}>
+            <div className="t-title3">Invite a friend to Freccos</div>
+            <div className="t-cap muted">Share your invite code · {user?.invite_code}</div>
+          </div>
+          <button onClick={shareInvite} className="btn-pill btn-primary" style={{ padding: "8px 14px", fontSize: 13 }} data-testid="people-share-invite">
+            Share
+          </button>
+        </div>
       )}
 
-      {/* Discovery sections */}
-      {searchResults === null && discover && (
-        <>
-          {/* Contacts — opt-in */}
-          <Section title="People you may know" icon={<Phone size={14} />}>
-            <div className="ios-card mx-4 px-4 py-3 flex items-center gap-3" data-testid="contacts-card">
-              <div style={{ flex: 1 }}>
-                <div className="t-title3">Find your contacts</div>
-                <div className="t-cap muted">Match your phone contacts against Freccos.</div>
-              </div>
-              <button onClick={requestContacts} className="btn-pill btn-secondary" style={{ padding: "8px 12px", fontSize: 13 }} data-testid="contacts-btn">
-                Allow
-              </button>
-            </div>
-          </Section>
-
-          {discover.friends_of_friends?.length > 0 && (
-            <Section title="Friends of friends" icon={<Sparkles size={14} />}>
-              <PeopleList users={discover.friends_of_friends} onToggle={(u) => toggleFollow(u, "fof", loadDiscover)} />
-            </Section>
-          )}
-          {discover.active_this_week?.length > 0 && (
-            <Section title="Active this week" icon={<Clock size={14} />}>
-              <PeopleList users={discover.active_this_week} onToggle={(u) => toggleFollow(u, "active", loadDiscover)} />
-            </Section>
-          )}
-          {discover.bucket_matches?.length > 0 && (
-            <Section title="Visited places you'd love" icon={<Compass size={14} />}>
-              <PeopleList users={discover.bucket_matches} onToggle={(u) => toggleFollow(u, "bucket", loadDiscover)} />
-            </Section>
-          )}
-          {discover.recently_joined?.length > 0 && (
-            <Section title="New to Freccos">
-              <PeopleList users={discover.recently_joined} onToggle={(u) => toggleFollow(u, "new", loadDiscover)} />
-            </Section>
-          )}
-          {Object.values(discover).every((arr) => !arr || arr.length === 0) && (
-            <div className="px-6 mt-6" data-testid="people-empty">
-              <p className="t-sub muted">No one to suggest just yet. As people you follow grow their travel logs, suggestions will appear here.</p>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-function Section({ title, icon, children }) {
-  return (
-    <div className="mt-2">
-      <div className="section-header flex items-center gap-1" style={{ color: "#3a3a3c" }}>
-        {icon}{title}
+      <div className="mt-3">
+        {list.length === 0 ? (
+          <div className="px-6 mt-4" data-testid="people-empty">
+            <p className="t-sub muted">
+              {q ? `No one matches "${q}" yet.` :
+                tab === "friends_of_friends" ? "No friends-of-friends to suggest yet. Follow a few people first." :
+                tab === "active_this_week" ? "No one's added a new recommendation this week." :
+                tab === "recently_joined" ? "No new joiners in the last 30 days." :
+                "No one to suggest just yet."}
+            </p>
+          </div>
+        ) : (
+          <div className="ios-card mx-4" style={{ overflow: "hidden" }} data-testid="people-list">
+            {list.map((u) => <PersonRow key={u.id} u={u} onToggle={() => toggleFollow(u)} />)}
+          </div>
+        )}
       </div>
-      {children}
-    </div>
-  );
-}
-
-function EmptyMini({ children }) {
-  return <div className="px-6 t-sub muted">{children}</div>;
-}
-
-function PeopleList({ users, onToggle }) {
-  return (
-    <div className="ios-card mx-4" style={{ overflow: "hidden" }} data-testid="people-list">
-      {users.map((u) => (
-        <PersonRow key={u.id} u={u} onToggle={() => onToggle(u)} />
-      ))}
     </div>
   );
 }
@@ -168,9 +134,8 @@ function PersonRow({ u, onToggle }) {
     : u.latest_rec ? `Latest: '${u.latest_rec.place_name}'${u.latest_rec.city_name ? `, ${u.latest_rec.city_name}` : ""}`
     : null;
   const btnLabel = u.is_following ? "Following" : u.request_pending ? "Requested" : "Follow";
-  const btnStyle = u.is_following
-    ? { background: "rgba(120,120,128,0.14)", color: "#1C1C1E" }
-    : u.request_pending
+  const btnIcon = u.is_following ? <UserCheck size={14} /> : u.request_pending ? <Clock size={14} /> : <UserPlus size={14} />;
+  const btnStyle = u.is_following || u.request_pending
     ? { background: "rgba(120,120,128,0.14)", color: "#1C1C1E" }
     : { background: "#0A84FF", color: "#fff" };
   return (
@@ -183,14 +148,9 @@ function PersonRow({ u, onToggle }) {
           {subText && <div className="t-cap" style={{ color: "#0A84FF", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{subText}</div>}
         </div>
       </Link>
-      <button
-        data-testid={`follow-toggle-${u.id}`}
-        onClick={onToggle}
-        className="btn-pill"
-        style={{ padding: "6px 14px", fontSize: 13, ...btnStyle }}
-      >
-        {u.is_following ? <UserCheck size={14} /> : <UserPlus size={14} />}
-        {btnLabel}
+      <button data-testid={`follow-toggle-${u.id}`} onClick={onToggle} className="btn-pill"
+        style={{ padding: "6px 14px", fontSize: 13, ...btnStyle }}>
+        {btnIcon}{btnLabel}
       </button>
     </div>
   );

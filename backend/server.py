@@ -952,6 +952,28 @@ async def unblock_user(user_id: str, user: dict = Depends(current_user)):
     return {"ok": True}
 
 
+@api.delete("/users/me")
+async def delete_my_account(response: Response, user: dict = Depends(current_user)):
+    """Permanently delete the signed-in user and all their data."""
+    uid = user["id"]
+    # Wipe the user from everyone else's following/followers lists
+    await db.users.update_many({}, {"$pull": {"following": uid, "followers": uid, "blocked": uid}})
+    # Delete their own document
+    await db.users.delete_one({"id": uid})
+    # Clean up all related data
+    await db.recommendations.delete_many({"user_id": uid})
+    await db.user_trips.delete_many({"user_id": uid})
+    await db.trip_plans.delete_many({"user_id": uid})
+    await db.follows.delete_many({"$or": [{"follower_id": uid}, {"following_id": uid}]})
+    await db.follow_requests.delete_many({"$or": [{"requester_id": uid}, {"target_id": uid}]})
+    await db.notifications.delete_many({"$or": [{"user_id": uid}, {"actor_id": uid}]})
+    await db.user_sessions.delete_many({"user_id": uid})
+    await db.password_reset_tokens.delete_many({"user_id": uid})
+    # Clear cookies
+    clear_auth_cookies(response)
+    return {"ok": True}
+
+
 @api.get("/users/me/blocked")
 async def my_blocked(user: dict = Depends(current_user)):
     blocked_ids = user.get("blocked", [])
