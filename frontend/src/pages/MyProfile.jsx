@@ -9,7 +9,7 @@ import AddTripSheet from "../components/AddTripSheet";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
 import { flagForCountry } from "../lib/flags";
 import {
-  Settings, Share2, Copy, LogOut, Pencil, Trash2, ChevronLeft, Plus, Map, MoreHorizontal,
+  Settings, Share2, LogOut, Pencil, Trash2, ChevronLeft, Plus, Map, MoreHorizontal,
   Download, Instagram, Shield, Lock,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -56,11 +56,6 @@ export default function MyProfile() {
     const text = `Join me on Freccos! Use my invite code: ${user.invite_code} https://freccos.com`;
     if (navigator.share) try { await navigator.share({ text }); } catch { /* user cancelled */ }
     else try { await navigator.clipboard.writeText(text); toast.success("Invite copied"); } catch { toast("Copy failed"); }
-  };
-
-  const copyCode = async () => {
-    try { await navigator.clipboard.writeText(user.invite_code); toast.success("Code copied"); }
-    catch { toast("Copy failed"); }
   };
 
   const deleteRec = async (rec) => {
@@ -232,17 +227,15 @@ export default function MyProfile() {
         </div>
       )}
 
-      {/* Compact invite-code footer — visually de-emphasised */}
-      <div className="mx-4 mt-6 mb-2 flex items-center gap-3" data-testid="invite-card" style={{ padding: "10px 12px", background: "rgba(120,120,128,0.08)", borderRadius: 10 }}>
+      {/* Compact invite-code footer — same style as People tab invite card */}
+      <div className="ios-card mx-4 px-4 py-3 flex items-center gap-3 mt-6 mb-2" data-testid="invite-card">
+        <Share2 size={18} color="#0A84FF" />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 10, color: "#8E8E93", textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 600 }}>Invite code</div>
-          <div data-testid="invite-code" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 14, color: "#1C1C1E", letterSpacing: 1.2, marginTop: 2 }}>{user.invite_code}</div>
+          <div className="t-title3">Invite a friend to Freccos</div>
+          <div className="t-cap muted">Share your invite code · <span data-testid="invite-code">{user.invite_code}</span></div>
         </div>
-        <button data-testid="invite-copy" onClick={copyCode} aria-label="Copy invite code" style={{ background: "transparent", border: "none", color: "#8E8E93", padding: 8, cursor: "pointer" }}>
-          <Copy size={16} />
-        </button>
-        <button data-testid="invite-share" onClick={shareInvite} aria-label="Share invite code" style={{ background: "transparent", border: "none", color: "#0A84FF", padding: 8, cursor: "pointer" }}>
-          <Share2 size={16} />
+        <button data-testid="invite-share" onClick={shareInvite} className="btn-pill btn-primary" style={{ padding: "8px 14px", fontSize: 13 }}>
+          Share
         </button>
       </div>
 

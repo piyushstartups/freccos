@@ -38,14 +38,14 @@ export default function Explore() {
           {unread > 0 && <span style={{ position: "absolute", top: 10, right: 10, width: 9, height: 9, background: "#FF453A", borderRadius: 5, border: "2px solid #1C1C1E" }} />}
         </button>
         <div style={{ paddingTop: 4 }}>
-          <Wordmark size={38} color="#fff" />
+          <Wordmark size={44} color="#fff" />
         </div>
         <p style={{ color: "#8E8E93", fontSize: 13, marginTop: 10, letterSpacing: 0.2 }}>
-          Real places. Recommended by people you trust.
+          Cities your people have been to.
         </p>
       </div>
 
-      <div className="px-4 py-3" style={{ position: "sticky", top: 0, background: "#F2F2F7", zIndex: 5 }}>
+      <div className="px-4 pt-4 pb-3" style={{ position: "sticky", top: 0, background: "#F2F2F7", zIndex: 5 }}>
         <div style={{ position: "relative" }}>
           <Search size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#8E8E93" }} />
           <input data-testid="explore-search" className="ios-input" placeholder="Search a city..."

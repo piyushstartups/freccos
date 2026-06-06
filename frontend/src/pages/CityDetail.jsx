@@ -5,7 +5,7 @@ import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
 import Avatar from "../components/Avatar";
 import StackedAvatars from "../components/StackedAvatars";
 import PlaceSheet from "../components/PlaceSheet";
-import { Bookmark, BookmarkCheck, ChevronLeft, Plus, ChevronRight } from "lucide-react";
+import { Bookmark, BookmarkCheck, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { formatMonthYear } from "../lib/utils-frec";
 import AddRecommendationSheet from "../components/AddRecommendationSheet";
@@ -103,14 +103,6 @@ export default function CityDetail() {
           </div>
         )}
 
-        <button
-          onClick={() => setAddOpen(true)}
-          data-testid="city-add-rec"
-          className="btn-pill mt-4"
-          style={{ background: "rgba(10,132,255,0.18)", color: "#0A84FF", padding: "8px 14px", fontSize: 13 }}
-        >
-          <Plus size={16} /> Add a recommendation
-        </button>
       </div>
 
       <CategoryTabs value={category} onChange={onCatChange} />

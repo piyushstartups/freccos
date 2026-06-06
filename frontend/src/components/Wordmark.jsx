@@ -3,13 +3,13 @@ import React from "react";
 // The Freccos wordmark — Vogue-style serif masthead.
 // Always rendered in the imported Google Font (Cormorant Garamond / Playfair Display),
 // semibold 600, with generous letter-spacing for an editorial feel.
-export default function Wordmark({ size = 38, color = "#fff", className = "", style = {} }) {
+export default function Wordmark({ size = 42, color = "#fff", weight = 500, className = "", style = {} }) {
   return (
     <span
       className={className}
       style={{
         fontFamily: "'Cormorant Garamond', 'Playfair Display', Georgia, 'Times New Roman', serif",
-        fontWeight: 600,
+        fontWeight: weight,
         fontSize: size,
         letterSpacing: "-1px",
         lineHeight: 1,

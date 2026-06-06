@@ -15,7 +15,7 @@ export function CategoryTabs({ value, onChange, includeAll = true, testIdPrefix 
   const list = [includeAll && { id: "all", label: "All" }, ...CATEGORIES].filter(Boolean);
   return (
     <div
-      className="flex gap-2 overflow-x-auto px-4 pb-2 pt-1"
+      className="flex gap-2 overflow-x-auto px-4 pb-2 pt-3"
       style={{ scrollbarWidth: "none" }}
       data-testid="category-tabs"
     >
