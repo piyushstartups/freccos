@@ -53,7 +53,7 @@ export default function MyProfile() {
   useEffect(() => { if (openCityId) loadRecs(openCityId, category); /* eslint-disable-next-line */ }, [openCityId, category]);
 
   const shareInvite = async () => {
-    const text = `Join me on Freccos! Use my code: ${user.invite_code} — freccos.com`;
+    const text = `Join me on Freccos! Use my invite code: ${user.invite_code} https://freccos.com`;
     if (navigator.share) try { await navigator.share({ text }); } catch { /* user cancelled */ }
     else try { await navigator.clipboard.writeText(text); toast.success("Invite copied"); } catch { toast("Copy failed"); }
   };
@@ -91,12 +91,6 @@ export default function MyProfile() {
   const byCountry = {};
   for (const c of visibleCities) (byCountry[c.country || "Other"] = byCountry[c.country || "Other"] || []).push(c);
 
-  const totalRecs = allCities.reduce((s, c) => s + (c.rec_count || 0), 0);
-  const milestones = [];
-  if (totalRecs >= 1) milestones.push("First rec added 🎉");
-  if (totalRecs >= 10) milestones.push("10 places logged ✈️");
-  if (countries.length >= 5) milestones.push("5 countries explored 🌍");
-  if ((profile.follower_count || 0) >= 20) milestones.push("20 followers 👥");
   const joined = profile.created_at ? new Date(profile.created_at).toLocaleDateString(undefined, { month: "long", year: "numeric" }) : null;
 
   const cityOpen = allCities.find((c) => c.id === openCityId);
@@ -108,7 +102,6 @@ export default function MyProfile() {
         cityCount={allCities.length}
         countryCount={countries.length}
         countries={countries}
-        milestones={milestones}
         joined={joined}
         countryFilter={countryFilter}
         setCountryFilter={setCountryFilter}
@@ -239,18 +232,17 @@ export default function MyProfile() {
         </div>
       )}
 
-      {/* Invite card */}
-      <div className="section-header">Your invite code</div>
-      <div className="ios-card mx-4 px-4 py-4 flex items-center gap-3" data-testid="invite-card">
-        <div style={{ flex: 1 }}>
-          <div className="t-cap muted">Bring friends along</div>
-          <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: 3 }} data-testid="invite-code">{user.invite_code}</div>
+      {/* Compact invite-code footer — visually de-emphasised */}
+      <div className="mx-4 mt-6 mb-2 flex items-center gap-3" data-testid="invite-card" style={{ padding: "10px 12px", background: "rgba(120,120,128,0.08)", borderRadius: 10 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10, color: "#8E8E93", textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 600 }}>Invite code</div>
+          <div data-testid="invite-code" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 14, color: "#1C1C1E", letterSpacing: 1.2, marginTop: 2 }}>{user.invite_code}</div>
         </div>
-        <button data-testid="invite-copy" onClick={copyCode} className="btn-pill btn-secondary" style={{ padding: "8px 12px", fontSize: 13 }}>
-          <Copy size={14} /> Copy
+        <button data-testid="invite-copy" onClick={copyCode} aria-label="Copy invite code" style={{ background: "transparent", border: "none", color: "#8E8E93", padding: 8, cursor: "pointer" }}>
+          <Copy size={16} />
         </button>
-        <button data-testid="invite-share" onClick={shareInvite} className="btn-pill btn-primary" style={{ padding: "8px 12px", fontSize: 13 }}>
-          <Share2 size={14} /> Share
+        <button data-testid="invite-share" onClick={shareInvite} aria-label="Share invite code" style={{ background: "transparent", border: "none", color: "#0A84FF", padding: 8, cursor: "pointer" }}>
+          <Share2 size={16} />
         </button>
       </div>
 
@@ -275,18 +267,18 @@ export default function MyProfile() {
   );
 }
 
-function ProfileHero({ profile, cityCount, countryCount, countries, milestones, joined, countryFilter, setCountryFilter, onSettings, onTapFollowers, onTapFollowing }) {
+function ProfileHero({ profile, cityCount, countryCount, countries, joined, countryFilter, setCountryFilter, onSettings, onTapFollowers, onTapFollowing }) {
   const followers = profile.follower_count || 0;
   const following = profile.following_count || 0;
   return (
-    <div style={{ background: "#1C1C1E", color: "#fff", padding: "20px 16px 18px", position: "relative" }} data-testid="profile-hero">
+    <div style={{ background: "#1C1C1E", color: "#fff", padding: "28px 16px 18px", position: "relative" }} data-testid="profile-hero">
       {/* Settings gear, top-right */}
       <button
         data-testid="settings-btn"
         onClick={onSettings}
         aria-label="Settings"
         style={{
-          position: "absolute", top: 14, right: 8,
+          position: "absolute", top: 22, right: 8,
           background: "transparent", border: "none", color: "#fff",
           width: 44, height: 44, display: "inline-flex", alignItems: "center", justifyContent: "center",
           borderRadius: 9999,
@@ -369,30 +361,7 @@ function ProfileHero({ profile, cityCount, countryCount, countries, milestones, 
         </div>
       )}
 
-      {/* Milestones — single horizontal scroll row */}
-      {milestones.length > 0 && (
-        <div
-          data-testid="milestones"
-          style={{
-            marginTop: 10, display: "flex", gap: 6,
-            overflowX: "auto", scrollbarWidth: "none",
-            WebkitOverflowScrolling: "touch",
-            paddingBottom: 2,
-          }}
-        >
-          {milestones.map((m) => (
-            <span
-              key={m}
-              style={{
-                background: "rgba(255,255,255,0.08)", color: "#fff", fontSize: 11,
-                padding: "4px 9px", borderRadius: 9999, whiteSpace: "nowrap", flexShrink: 0,
-              }}
-            >
-              {m}
-            </span>
-          ))}
-        </div>
-      )}
+      {/* Milestones removed per design spec */}
 
       {joined && (
         <p style={{ color: "#5A5A5F", fontSize: 11, marginTop: 10, marginBottom: 0 }}>On Freccos since {joined}</p>

@@ -9,7 +9,6 @@ import { toast } from "sonner";
 const TABS = [
   { id: "all", label: "All" },
   { id: "friends_of_friends", label: "Friends of friends" },
-  { id: "active_this_week", label: "Active" },
   { id: "recently_joined", label: "New" },
 ];
 
@@ -56,7 +55,7 @@ export default function People() {
   };
 
   const shareInvite = async () => {
-    const text = `Join me on Freccos! Use my code: ${user?.invite_code} — freccos.com`;
+    const text = `Join me on Freccos! Use my invite code: ${user?.invite_code} https://freccos.com`;
     if (navigator.share) { try { await navigator.share({ text }); } catch { /* cancelled */ } }
     else { try { await navigator.clipboard.writeText(text); toast.success("Invite copied"); } catch { toast("Copy failed"); } }
   };
@@ -110,7 +109,6 @@ export default function People() {
             <p className="t-sub muted">
               {q ? `No one matches "${q}" yet.` :
                 tab === "friends_of_friends" ? "No friends-of-friends to suggest yet. Follow a few people first." :
-                tab === "active_this_week" ? "No one's added a new recommendation this week." :
                 tab === "recently_joined" ? "No new joiners in the last 30 days." :
                 "No one to suggest just yet."}
             </p>

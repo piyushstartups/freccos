@@ -11,7 +11,7 @@ export default function Wordmark({ size = 38, color = "#fff", className = "", st
         fontFamily: "'Cormorant Garamond', 'Playfair Display', Georgia, 'Times New Roman', serif",
         fontWeight: 600,
         fontSize: size,
-        letterSpacing: "2px",
+        letterSpacing: "-1px",
         lineHeight: 1,
         color,
         display: "inline-block",
