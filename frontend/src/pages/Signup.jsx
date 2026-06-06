@@ -129,7 +129,7 @@ export default function Signup() {
           {codeStatus?.valid && (
             <p className="t-sub mt-2" style={{ color: "#30D158" }} data-testid="signup-invite-ok">
               <Check size={14} style={{ display: "inline", marginRight: 4 }} />
-              Invited by {codeStatus.referrer_name} — you'll auto-follow each other.
+              Invited by {codeStatus.referrer_name} — you&apos;ll auto-follow each other.
             </p>
           )}
           {err && <p data-testid="signup-error" className="t-sub mt-2" style={{ color: "#FF453A" }}>{err}</p>}

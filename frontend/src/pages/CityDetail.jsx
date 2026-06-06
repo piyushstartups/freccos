@@ -4,7 +4,8 @@ import api from "../lib/api";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
 import Avatar from "../components/Avatar";
 import StackedAvatars from "../components/StackedAvatars";
-import { Bookmark, BookmarkCheck, ChevronLeft, Plus } from "lucide-react";
+import PlaceSheet from "../components/PlaceSheet";
+import { Bookmark, BookmarkCheck, ChevronLeft, Plus, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { formatMonthYear } from "../lib/utils-frec";
 import AddRecommendationSheet from "../components/AddRecommendationSheet";
@@ -15,9 +16,9 @@ export default function CityDetail() {
   const [friends, setFriends] = useState([]);
   const [recs, setRecs] = useState([]);
   const [category, setCategory] = useState("all");
-  const [expanded, setExpanded] = useState({});
   const [addOpen, setAddOpen] = useState(false);
   const [savingKey, setSavingKey] = useState(null);
+  const [placeGroup, setPlaceGroup] = useState(null);
 
   const loadCity = async () => {
     const { data } = await api.get(`/cities/${cityId}`);
@@ -124,40 +125,33 @@ export default function CityDetail() {
         )}
         {recs.map((g) => {
           const isMulti = g.contributors.length >= 2;
-          const isExpanded = expanded[g.place_key];
           return (
             <div
               key={g.place_key}
               className="ios-card"
               data-testid={`rec-${g.place_key}`}
+              onClick={() => setPlaceGroup(g)}
               style={{
                 padding: "14px 16px",
                 borderLeft: isMulti ? "3px solid #0A84FF" : undefined,
                 background: isMulti ? "linear-gradient(180deg, rgba(10,132,255,0.05), #fff 50%)" : "#fff",
+                cursor: "pointer",
               }}
             >
               <div className="flex items-start justify-between gap-3">
                 <div style={{ flex: 1 }}>
-                  <div className="t-title3">{g.place_name}</div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <CategoryChip category={g.category} />
-                  </div>
+                  <div className="t-title3 flex items-center gap-1">{g.place_name} <ChevronRight size={14} color="#C7C7CC" /></div>
+                  <div className="flex items-center gap-2 mt-1"><CategoryChip category={g.category} /></div>
                 </div>
-                <SaveButton
-                  saved={g.is_saved}
-                  loading={savingKey === g.place_key}
-                  onClick={() => onSaveToggle(g)}
-                  testId={`save-${g.place_key}`}
-                />
+                <SaveButton saved={g.is_saved} loading={savingKey === g.place_key}
+                  onClick={(e) => { e.stopPropagation(); onSaveToggle(g); }}
+                  testId={`save-${g.place_key}`} />
               </div>
-
-              {/* contributors */}
               <div className="mt-3 flex items-center gap-2">
                 <StackedAvatars users={g.contributors} size={26} />
                 {isMulti ? (
                   <div className="t-sub" style={{ flex: 1 }}>
-                    <strong>{g.contributors[0].name?.split(" ")[0]}</strong>
-                    {", "}
+                    <strong>{g.contributors[0].name?.split(" ")[0]}</strong>{", "}
                     <strong>{g.contributors[1].name?.split(" ")[0]}</strong>
                     {g.contributors.length > 2 && ` + ${g.contributors.length - 2} more`} recommended this
                   </div>
@@ -168,38 +162,9 @@ export default function CityDetail() {
                   </div>
                 )}
               </div>
-
-              {/* Note preview */}
-              {!isMulti && g.contributors[0].note && (
-                <p className="t-body mt-2">{g.contributors[0].note}</p>
-              )}
-
-              {isMulti && (
-                <>
-                  <p className="t-body mt-2">{g.contributors[0].note}</p>
-                  <button
-                    data-testid={`expand-${g.place_key}`}
-                    onClick={() => setExpanded((m) => ({ ...m, [g.place_key]: !isExpanded }))}
-                    className="t-sub mt-2"
-                    style={{ background: "transparent", border: "none", color: "#0A84FF", padding: 0 }}
-                  >
-                    {isExpanded ? "Hide notes" : `See ${g.contributors.length - 1} more note${g.contributors.length - 1 === 1 ? "" : "s"}`}
-                  </button>
-                  {isExpanded && (
-                    <div className="mt-3 space-y-3">
-                      {g.contributors.slice(1).map((c) => (
-                        <div key={c.rec_id} className="flex gap-3">
-                          <Avatar user={c} size={28} />
-                          <div style={{ flex: 1 }}>
-                            <div className="t-sub"><strong>{c.name}</strong> {c.created_at && <span className="muted">· {formatMonthYear(c.created_at)}</span>}</div>
-                            {c.note && <p className="t-body">{c.note}</p>}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
+              {g.contributors[0].note && <p className="t-body mt-2" style={{
+                display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+              }}>{g.contributors[0].note}</p>}
             </div>
           );
         })}
@@ -211,16 +176,23 @@ export default function CityDetail() {
         lockedCity={city}
         onCreated={() => loadRecs(category)}
       />
+      <PlaceSheet
+        open={!!placeGroup}
+        onClose={() => setPlaceGroup(null)}
+        group={placeGroup}
+        cityId={cityId}
+        onChange={() => loadRecs(category)}
+      />
     </div>
   );
 }
 
 function SaveButton({ saved, loading, onClick, testId }) {
   const [bump, setBump] = useState(false);
-  const handle = () => {
+  const handle = (e) => {
     if (loading) return;
     if (!saved) { setBump(true); setTimeout(() => setBump(false), 320); }
-    onClick?.();
+    onClick?.(e);
   };
   return (
     <button

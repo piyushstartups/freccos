@@ -65,7 +65,7 @@ export default function AddTripSheet({ open, onClose, onAdded }) {
   return (
     <BottomSheet open={open} onClose={onClose} title="Add a trip" testId="add-trip-sheet">
       <div className="px-4 pb-6" style={{ paddingBottom: "max(24px, env(safe-area-inset-bottom))" }}>
-        <p className="t-sub muted mb-2">Pick a city you've been to. You can add specific recommendations from inside.</p>
+        <p className="t-sub muted mb-2">Pick a city you&apos;ve been to. You can add specific recommendations from inside.</p>
         <div style={{ position: "relative" }}>
           <input
             data-testid="trip-city-input"

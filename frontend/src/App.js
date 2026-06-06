@@ -10,13 +10,16 @@ import ForgotPassword from "./pages/ForgotPassword";
 import AuthCallback from "./pages/AuthCallback";
 import Explore from "./pages/Explore";
 import CityDetail from "./pages/CityDetail";
-import Friends from "./pages/Friends";
+import People from "./pages/People";
 import FriendProfile from "./pages/FriendProfile";
 import TripPlans from "./pages/TripPlans";
 import TripDetail from "./pages/TripDetail";
 import MyProfile from "./pages/MyProfile";
 import MainLayout from "./pages/MainLayout";
 import PWAInstallBanner from "./components/PWAInstallBanner";
+import Notifications from "./pages/Notifications";
+import FollowList from "./pages/FollowList";
+import BlockedAccounts from "./pages/BlockedAccounts";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -33,7 +36,6 @@ function ProtectedRoute({ children }) {
 
 function AppRoutes() {
   const location = useLocation();
-  // Detect OAuth callback in URL hash synchronously
   if (location.hash?.includes("session_id=") || (typeof window !== "undefined" && window.location.hash?.includes("session_id="))) {
     return <AuthCallback />;
   }
@@ -46,11 +48,15 @@ function AppRoutes() {
       <Route element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
         <Route path="/explore" element={<Explore />} />
         <Route path="/city/:cityId" element={<CityDetail />} />
-        <Route path="/friends" element={<Friends />} />
+        <Route path="/people" element={<People />} />
+        <Route path="/friends" element={<Navigate to="/people" replace />} />
         <Route path="/user/:userId" element={<FriendProfile />} />
+        <Route path="/user/:userId/:mode" element={<FollowList />} />
         <Route path="/trips" element={<TripPlans />} />
         <Route path="/trips/:cityId" element={<TripDetail />} />
         <Route path="/me" element={<MyProfile />} />
+        <Route path="/me/blocked" element={<BlockedAccounts />} />
+        <Route path="/notifications" element={<Notifications />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -60,7 +66,6 @@ function AppRoutes() {
 function App() {
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      // Service worker registration deferred until load to avoid blocking
       window.addEventListener("load", () => {
         navigator.serviceWorker.register("/sw.js").catch(() => {});
       });

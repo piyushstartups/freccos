@@ -180,7 +180,7 @@ function IosInstructions() {
     <div className="space-y-2 mt-1">
       <StepRow
         icon={<Share size={18} />}
-        label={<>Tap the <strong>Share</strong> icon in Safari's toolbar</>}
+        label={<>Tap the <strong>Share</strong> icon in Safari&apos;s toolbar</>}
       />
       <StepRow
         icon={<Plus size={18} />}
@@ -197,7 +197,7 @@ function IosInstructions() {
 function AndroidNativePrompt({ onInstall, installing }) {
   return (
     <>
-      <p className="t-sub muted mt-1">One tap and you're done.</p>
+      <p className="t-sub muted mt-1">One tap and you&apos;re done.</p>
       <button
         data-testid="pwa-install-now"
         onClick={onInstall}

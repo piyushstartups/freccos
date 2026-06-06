@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
+import Wordmark from "../components/Wordmark";
 
 export default function Splash() {
   const nav = useNavigate();
@@ -22,9 +23,11 @@ export default function Splash() {
       }}
       data-testid="splash"
     >
-      <FreccosLogo />
-      <h1 className="t-large mt-5" style={{ color: "#fff" }}>Freccos</h1>
-      <p className="t-sub mt-1" style={{ color: "#8E8E93" }}>The places your friends actually love.</p>
+      <FreccosLogo size={80} />
+      <div style={{ marginTop: 18 }}>
+        <Wordmark size={42} color="#fff" />
+      </div>
+      <p className="t-sub mt-2" style={{ color: "#8E8E93" }}>The places your friends actually love.</p>
     </div>
   );
 }

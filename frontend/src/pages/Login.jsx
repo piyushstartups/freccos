@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { formatApiErrorDetail } from "../lib/api";
 import { FreccosLogo } from "./Splash";
+import Wordmark from "../components/Wordmark";
 import { Loader2 } from "lucide-react";
 
 export default function Login() {
@@ -40,8 +41,10 @@ export default function Login() {
         <div style={{ display: "flex", justifyContent: "center" }}>
           <FreccosLogo size={88} />
         </div>
-        <h1 className="t-large mt-4" style={{ color: "#fff" }}>Freccos</h1>
-        <p className="t-sub" style={{ color: "#8E8E93" }}>The places your friends actually love.</p>
+        <div style={{ marginTop: 16 }}>
+          <Wordmark size={42} color="#fff" />
+        </div>
+        <p className="t-sub mt-1" style={{ color: "#8E8E93" }}>The places your friends actually love.</p>
       </div>
       <form onSubmit={submit} style={{ padding: "28px 16px", flex: 1 }}>
         <h2 className="t-title1 mb-4">Welcome back</h2>

@@ -261,8 +261,12 @@ async def startup():
     await db.recommendations.create_index([("city_id", 1)])
     await db.follows.create_index([("follower_id", 1), ("following_id", 1)], unique=True)
     await db.trip_plans.create_index([("user_id", 1), ("city_id", 1)], unique=True)
+    await db.user_trips.create_index([("user_id", 1), ("city_id", 1)], unique=True)
     await db.user_sessions.create_index("session_token")
     await db.password_reset_tokens.create_index("expires_at", expireAfterSeconds=0)
+    await db.follow_requests.create_index([("requester_id", 1), ("target_id", 1)], unique=True)
+    await db.follow_requests.create_index("target_id")
+    await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
     # Init storage
     init_storage()
     # Seed demo users
@@ -397,6 +401,8 @@ class UpdateProfileReq(BaseModel):
     name: Optional[str] = None
     bio: Optional[str] = None
     profile_photo_url: Optional[str] = None
+    is_private: Optional[bool] = None
+    instagram_handle: Optional[str] = None
 
 
 class RecCreateReq(BaseModel):
@@ -454,6 +460,10 @@ def public_user(u: dict) -> dict:
         "following": u.get("following", []),
         "followers": u.get("followers", []),
         "auth_provider": u.get("auth_provider"),
+        "is_private": bool(u.get("is_private", False)),
+        "instagram_handle": u.get("instagram_handle"),
+        "blocked": u.get("blocked", []),
+        "created_at": u.get("created_at"),
     }
 
 
@@ -463,6 +473,7 @@ def public_user_brief(u: dict) -> dict:
         "name": u.get("name"),
         "bio": u.get("bio"),
         "profile_photo_url": u.get("profile_photo_url"),
+        "is_private": bool(u.get("is_private", False)),
     }
 
 
@@ -566,6 +577,8 @@ async def register(req: RegisterReq, response: Response):
         })
         await db.follows.insert_one({"follower_id": user_id, "following_id": referrer["id"], "created_at": now_iso})
         await db.follows.insert_one({"follower_id": referrer["id"], "following_id": user_id, "created_at": now_iso})
+        # Notify referrer that someone joined using their code
+        await create_notification(referrer["id"], "invite_signup", actor_id=user_id)
 
     access = create_access_token(user_id, email)
     refresh = create_refresh_token(user_id)
@@ -729,17 +742,27 @@ async def get_file(path: str):
 @api.get("/users/search")
 async def search_users(q: str = "", user: dict = Depends(current_user)):
     q = (q or "").strip()
+    blocked = set(user.get("blocked", []))
     query = {"id": {"$ne": user["id"]}}
     if q:
         query["name"] = {"$regex": re.escape(q), "$options": "i"}
-    cursor = db.users.find(query, {"_id": 0, "password_hash": 0}).limit(50)
+    cursor = db.users.find(query, {"_id": 0, "password_hash": 0}).limit(80)
     results = []
-    raw = [u async for u in cursor]
+    raw = []
+    async for u in cursor:
+        if u["id"] in blocked or user["id"] in u.get("blocked", []):
+            continue
+        raw.append(u)
     stats = await user_travel_stats([u["id"] for u in raw])
     for u in raw:
+        is_following = user["id"] in u.get("followers", [])
+        pending = False
+        if u.get("is_private") and not is_following:
+            pending = bool(await db.follow_requests.find_one({"requester_id": user["id"], "target_id": u["id"]}))
         s = stats.get(u["id"], {"city_count": 0, "country_count": 0})
         results.append({**public_user_brief(u),
-                        "is_following": user["id"] in u.get("followers", []),
+                        "is_following": is_following,
+                        "request_pending": pending,
                         "city_count": s["city_count"],
                         "country_count": s["country_count"]})
     return results
@@ -750,9 +773,37 @@ async def get_user_profile(user_id: str, user: dict = Depends(current_user)):
     target = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
-    # Cities = union of (cities with recommendations) and (manually-added trips)
+    # Mutual block silently hides
+    if user_id in user.get("blocked", []) or user["id"] in target.get("blocked", []):
+        raise HTTPException(status_code=404, detail="User not found")
+
+    is_self = user_id == user["id"]
+    is_follower = user["id"] in target.get("followers", [])
+    is_private = bool(target.get("is_private"))
+    can_view_full = is_self or (not is_private) or is_follower
+
+    base = {
+        **public_user_brief(target),
+        "instagram_handle": target.get("instagram_handle"),
+        "is_following": is_follower,
+        "is_private": is_private,
+        "follows_me": target["id"] in user.get("following", []),
+        "follower_count": len(target.get("followers", [])),
+        "following_count": len(target.get("following", [])),
+        "created_at": target.get("created_at"),
+    }
+    # Pending follow request?
+    if not is_self and not is_follower and is_private:
+        pending = await db.follow_requests.find_one({"requester_id": user["id"], "target_id": user_id})
+        base["request_status"] = "requested" if pending else "none"
+
+    if not can_view_full:
+        # Limited payload — name, photo, bio only. No stats, no cities.
+        return {**base, "city_count": 0, "country_count": 0, "cities": [], "countries": [], "can_view": False}
+
+    # Full payload: union of rec-cities and explicit trips
     rec_ids_by_city: dict = {}
-    async for r in db.recommendations.find({"user_id": user_id}, {"_id": 0}).limit(1000):
+    async for r in db.recommendations.find({"user_id": user_id}, {"_id": 0}).limit(2000):
         rec_ids_by_city.setdefault(r["city_id"], []).append(r)
     trip_city_ids = set()
     async for t in db.user_trips.find({"user_id": user_id}, {"_id": 0, "city_id": 1}).limit(500):
@@ -760,19 +811,29 @@ async def get_user_profile(user_id: str, user: dict = Depends(current_user)):
     all_city_ids = list(set(rec_ids_by_city.keys()) | trip_city_ids)
     cities = []
     if all_city_ids:
-        async for c in db.cities.find({"id": {"$in": all_city_ids}}, {"_id": 0}):
-            cities.append(c | {"rec_count": len(rec_ids_by_city.get(c["id"], []))})
+        async for c in db.cities.find({"id": {"$in": all_city_ids}}, {"_id": 0}).limit(500):
+            recs = rec_ids_by_city.get(c["id"], [])
+            photos = [r["photo_url"] for r in recs if r.get("photo_url")][:3]
+            cities.append({**c, "rec_count": len(recs), "photos": photos})
     countries = sorted({c["country"] for c in cities if c.get("country")})
     return {
-        **public_user_brief(target),
-        "is_following": user["id"] in target.get("followers", []),
-        "follows_me": target["id"] in user.get("following", []),
+        **base,
         "city_count": len(cities),
         "country_count": len(countries),
-        "follower_count": len(target.get("followers", [])),
-        "following_count": len(target.get("following", [])),
         "cities": cities,
+        "countries": countries,
+        "can_view": True,
     }
+
+
+async def create_notification(user_id: str, kind: str, actor_id: Optional[str] = None, payload: Optional[dict] = None):
+    """Add a notification for `user_id`. kind ∈ follow_request | new_follower | invite_signup | bucket_recs"""
+    await db.notifications.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id, "actor_id": actor_id,
+        "kind": kind, "payload": payload or {},
+        "read": False, "created_at": iso(now_utc()),
+    })
 
 
 @api.post("/users/{user_id}/follow")
@@ -782,16 +843,33 @@ async def follow_user(user_id: str, user: dict = Depends(current_user)):
     target = await db.users.find_one({"id": user_id})
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
+    # Blocked either way → silently no-op
+    if user["id"] in target.get("blocked", []) or user_id in user.get("blocked", []):
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.get("is_private"):
+        # Already following? short-circuit
+        if user["id"] in target.get("followers", []):
+            return {"status": "following"}
+        # Create follow request (idempotent)
+        try:
+            await db.follow_requests.insert_one({
+                "id": str(uuid.uuid4()),
+                "requester_id": user["id"], "target_id": user_id,
+                "status": "pending", "created_at": iso(now_utc()),
+            })
+            await create_notification(user_id, "follow_request", actor_id=user["id"])
+        except Exception:
+            pass  # already requested
+        return {"status": "requested"}
+    # Public follow — direct
     await db.users.update_one({"id": user["id"]}, {"$addToSet": {"following": user_id}})
     await db.users.update_one({"id": user_id}, {"$addToSet": {"followers": user["id"]}})
     try:
-        await db.follows.insert_one({
-            "follower_id": user["id"], "following_id": user_id,
-            "created_at": iso(now_utc()),
-        })
+        await db.follows.insert_one({"follower_id": user["id"], "following_id": user_id, "created_at": iso(now_utc())})
     except Exception:
         pass
-    return {"ok": True}
+    await create_notification(user_id, "new_follower", actor_id=user["id"])
+    return {"status": "following"}
 
 
 @api.post("/users/{user_id}/unfollow")
@@ -799,7 +877,161 @@ async def unfollow_user(user_id: str, user: dict = Depends(current_user)):
     await db.users.update_one({"id": user["id"]}, {"$pull": {"following": user_id}})
     await db.users.update_one({"id": user_id}, {"$pull": {"followers": user["id"]}})
     await db.follows.delete_one({"follower_id": user["id"], "following_id": user_id})
+    # Clear any pending request
+    await db.follow_requests.delete_one({"requester_id": user["id"], "target_id": user_id})
+    return {"status": "not_following"}
+
+
+@api.delete("/users/me/followers/{user_id}")
+async def remove_follower(user_id: str, user: dict = Depends(current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$pull": {"followers": user_id}})
+    await db.users.update_one({"id": user_id}, {"$pull": {"following": user["id"]}})
+    await db.follows.delete_one({"follower_id": user_id, "following_id": user["id"]})
     return {"ok": True}
+
+
+@api.get("/users/me/follow-requests")
+async def my_follow_requests(user: dict = Depends(current_user)):
+    out = []
+    async for r in db.follow_requests.find({"target_id": user["id"], "status": "pending"}, {"_id": 0}).sort("created_at", -1).limit(100):
+        requester = await db.users.find_one({"id": r["requester_id"]}, {"_id": 0, "password_hash": 0})
+        if requester:
+            out.append({**r, "requester": public_user_brief(requester)})
+    return out
+
+
+@api.post("/users/me/follow-requests/{request_id}/accept")
+async def accept_request(request_id: str, user: dict = Depends(current_user)):
+    req = await db.follow_requests.find_one({"id": request_id, "target_id": user["id"]})
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    rid = req["requester_id"]
+    await db.users.update_one({"id": rid}, {"$addToSet": {"following": user["id"]}})
+    await db.users.update_one({"id": user["id"]}, {"$addToSet": {"followers": rid}})
+    await db.follow_requests.delete_one({"id": request_id})
+    try:
+        await db.follows.insert_one({"follower_id": rid, "following_id": user["id"], "created_at": iso(now_utc())})
+    except Exception:
+        pass
+    # Mark related notification as read
+    await db.notifications.update_many({"user_id": user["id"], "kind": "follow_request", "actor_id": rid}, {"$set": {"read": True}})
+    await create_notification(rid, "request_accepted", actor_id=user["id"])
+    return {"ok": True}
+
+
+@api.post("/users/me/follow-requests/{request_id}/decline")
+async def decline_request(request_id: str, user: dict = Depends(current_user)):
+    await db.follow_requests.delete_one({"id": request_id, "target_id": user["id"]})
+    return {"ok": True}
+
+
+@api.post("/users/{user_id}/block")
+async def block_user(user_id: str, user: dict = Depends(current_user)):
+    if user_id == user["id"]:
+        raise HTTPException(status_code=400, detail="Can't block yourself")
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    # Remove follow relationships both ways
+    await db.users.update_one({"id": user["id"]}, {"$pull": {"following": user_id, "followers": user_id}, "$addToSet": {"blocked": user_id}})
+    await db.users.update_one({"id": user_id}, {"$pull": {"following": user["id"], "followers": user["id"]}})
+    await db.follows.delete_many({"$or": [
+        {"follower_id": user["id"], "following_id": user_id},
+        {"follower_id": user_id, "following_id": user["id"]},
+    ]})
+    await db.follow_requests.delete_many({"$or": [
+        {"requester_id": user["id"], "target_id": user_id},
+        {"requester_id": user_id, "target_id": user["id"]},
+    ]})
+    return {"ok": True}
+
+
+@api.post("/users/{user_id}/unblock")
+async def unblock_user(user_id: str, user: dict = Depends(current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$pull": {"blocked": user_id}})
+    return {"ok": True}
+
+
+@api.get("/users/me/blocked")
+async def my_blocked(user: dict = Depends(current_user)):
+    blocked_ids = user.get("blocked", [])
+    if not blocked_ids:
+        return []
+    out = []
+    async for u in db.users.find({"id": {"$in": blocked_ids}}, {"_id": 0, "password_hash": 0}).limit(200):
+        out.append(public_user_brief(u))
+    return out
+
+
+@api.get("/users/me/notifications")
+async def my_notifications(user: dict = Depends(current_user)):
+    items = []
+    async for n in db.notifications.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).limit(100):
+        actor = None
+        if n.get("actor_id"):
+            au = await db.users.find_one({"id": n["actor_id"]}, {"_id": 0, "password_hash": 0})
+            if au:
+                actor = public_user_brief(au)
+        items.append({**n, "actor": actor})
+    # Stable ordering: pending follow requests first (within the recency window)
+    items.sort(key=lambda x: (0 if x["kind"] == "follow_request" and not x.get("read") else 1, x["created_at"]), reverse=False)
+    # Reverse for newest-first while keeping follow requests on top
+    pending = [i for i in items if i["kind"] == "follow_request" and not i.get("read")]
+    rest = [i for i in items if not (i["kind"] == "follow_request" and not i.get("read"))]
+    pending.sort(key=lambda x: x["created_at"], reverse=True)
+    rest.sort(key=lambda x: x["created_at"], reverse=True)
+    return pending + rest
+
+
+@api.post("/users/me/notifications/mark-read")
+async def mark_notifications_read(user: dict = Depends(current_user)):
+    await db.notifications.update_many({"user_id": user["id"], "read": False}, {"$set": {"read": True}})
+    return {"ok": True}
+
+
+@api.get("/users/me/notifications/unread-count")
+async def unread_count(user: dict = Depends(current_user)):
+    c = await db.notifications.count_documents({"user_id": user["id"], "read": False})
+    return {"count": c}
+
+
+@api.get("/users/{user_id}/followers")
+async def get_followers(user_id: str, user: dict = Depends(current_user)):
+    target = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    # Visibility: target public, or it's yourself, or you follow them
+    if target.get("is_private") and user_id != user["id"] and user["id"] not in target.get("followers", []):
+        raise HTTPException(status_code=403, detail="This account is private")
+    ids = target.get("followers", [])
+    if not ids:
+        return []
+    me_blocked = set(user.get("blocked", []))
+    out = []
+    async for u in db.users.find({"id": {"$in": ids}}, {"_id": 0, "password_hash": 0}).limit(500):
+        if u["id"] in me_blocked or user["id"] in u.get("blocked", []):
+            continue
+        out.append({**public_user_brief(u), "is_following": user["id"] in u.get("followers", [])})
+    return out
+
+
+@api.get("/users/{user_id}/following")
+async def get_following(user_id: str, user: dict = Depends(current_user)):
+    target = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.get("is_private") and user_id != user["id"] and user["id"] not in target.get("followers", []):
+        raise HTTPException(status_code=403, detail="This account is private")
+    ids = target.get("following", [])
+    if not ids:
+        return []
+    me_blocked = set(user.get("blocked", []))
+    out = []
+    async for u in db.users.find({"id": {"$in": ids}}, {"_id": 0, "password_hash": 0}).limit(500):
+        if u["id"] in me_blocked or user["id"] in u.get("blocked", []):
+            continue
+        out.append({**public_user_brief(u), "is_following": user["id"] in u.get("followers", [])})
+    return out
 
 
 @api.patch("/users/me")
@@ -809,6 +1041,111 @@ async def update_me(req: UpdateProfileReq, user: dict = Depends(current_user)):
         await db.users.update_one({"id": user["id"]}, {"$set": updates})
     u = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
     return public_user(u)
+
+
+@api.get("/users/me/discover")
+async def discover(user: dict = Depends(current_user)):
+    """Curated discovery — friends of friends, active this week, bucket-list matches, recently joined."""
+    my_id = user["id"]
+    my_following = set(user.get("following", []))
+    blocked = set(user.get("blocked", []))
+    seen = blocked | {my_id} | my_following  # exclude already-followed & yourself from "discover" sections
+
+    # Helper to enrich users with stats + latest rec + follow state
+    async def enrich(user_ids: list, extras: dict = None):
+        if not user_ids:
+            return []
+        extras = extras or {}
+        users_by_id = {u["id"]: u async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "password_hash": 0}).limit(200)}
+        valid_ids = [uid for uid in user_ids if uid in users_by_id and my_id not in users_by_id[uid].get("blocked", [])]
+        stats = await user_travel_stats(valid_ids)
+        # latest rec per user
+        latest_by_user = {}
+        async for r in db.recommendations.find({"user_id": {"$in": valid_ids}}, {"_id": 0}).sort("created_at", -1).limit(500):
+            if r["user_id"] not in latest_by_user:
+                city = await db.cities.find_one({"id": r["city_id"]}, {"_id": 0, "name": 1, "country": 1})
+                latest_by_user[r["user_id"]] = {
+                    "place_name": r["place_name"],
+                    "city_name": city.get("name") if city else None,
+                }
+        out = []
+        for uid in valid_ids:
+            u = users_by_id[uid]
+            s = stats.get(uid, {"city_count": 0, "country_count": 0})
+            is_following = my_id in u.get("followers", [])
+            request_pending = False
+            if u.get("is_private") and not is_following:
+                request_pending = bool(await db.follow_requests.find_one({"requester_id": my_id, "target_id": uid}))
+            out.append({
+                **public_user_brief(u),
+                "city_count": s["city_count"],
+                "country_count": s["country_count"],
+                "latest_rec": latest_by_user.get(uid),
+                "is_following": is_following,
+                "request_pending": request_pending,
+                **(extras.get(uid) or {}),
+            })
+        return out
+
+    # 1. Friends of friends (followed by 2+ of your follows)
+    fof_counts = {}
+    fof_followers = {}
+    if my_following:
+        async for u in db.users.find({"id": {"$in": list(my_following)}}, {"_id": 0, "following": 1, "name": 1}).limit(200):
+            for fid in u.get("following", []):
+                if fid in seen:
+                    continue
+                fof_counts[fid] = fof_counts.get(fid, 0) + 1
+                fof_followers.setdefault(fid, []).append(u.get("name"))
+    fof_ids = [uid for uid, c in fof_counts.items() if c >= 2][:30]
+    fof_extras = {uid: {"followed_by": fof_followers[uid][:3]} for uid in fof_ids}
+    fof = await enrich(fof_ids, fof_extras)
+
+    # 2. Active this week
+    week_ago = (now_utc() - timedelta(days=7)).isoformat()
+    active_ids = []
+    seen_active = set()
+    async for r in db.recommendations.find({"created_at": {"$gte": week_ago}}, {"_id": 0, "user_id": 1}).sort("created_at", -1).limit(500):
+        uid = r["user_id"]
+        if uid in seen or uid in seen_active:
+            continue
+        seen_active.add(uid)
+        active_ids.append(uid)
+        if len(active_ids) >= 20:
+            break
+    active = await enrich(active_ids)
+
+    # 3. Bucket-list matches — users who have recs in cities I have on my bucket list
+    bucket_city_ids = set()
+    async for p in db.trip_plans.find({"user_id": my_id}, {"_id": 0, "city_id": 1}).limit(200):
+        bucket_city_ids.add(p["city_id"])
+    bucket_users = []
+    bucket_match_city = {}
+    if bucket_city_ids:
+        async for r in db.recommendations.find({"city_id": {"$in": list(bucket_city_ids)}}, {"_id": 0, "user_id": 1, "city_id": 1}).limit(500):
+            uid = r["user_id"]
+            if uid in seen or uid in bucket_match_city:
+                continue
+            city = await db.cities.find_one({"id": r["city_id"]}, {"_id": 0, "name": 1})
+            bucket_match_city[uid] = {"matched_city": city.get("name") if city else None}
+            bucket_users.append(uid)
+            if len(bucket_users) >= 20:
+                break
+    bucket = await enrich(bucket_users, bucket_match_city)
+
+    # 4. Recently joined (last 30 days)
+    cutoff = (now_utc() - timedelta(days=30)).isoformat()
+    recent_ids = []
+    async for u in db.users.find({"created_at": {"$gte": cutoff}, "id": {"$nin": list(seen)}}, {"_id": 0, "id": 1}).sort("created_at", -1).limit(20):
+        recent_ids.append(u["id"])
+    recent = await enrich(recent_ids)
+
+    return {
+        "friends_of_friends": fof,
+        "active_this_week": active,
+        "bucket_matches": bucket,
+        "recently_joined": recent,
+    }
 
 
 # ----------------------- Cities -----------------------
@@ -917,6 +1254,14 @@ async def create_recommendation(req: RecCreateReq, user: dict = Depends(current_
         })
     except Exception:
         pass  # already exists — unique index
+    # Notify followers who have this city in their bucket list (saved_recs may be empty)
+    try:
+        followers_ids = user.get("followers", [])
+        if followers_ids:
+            async for plan in db.trip_plans.find({"user_id": {"$in": followers_ids}, "city_id": city["id"]}, {"_id": 0, "user_id": 1}).limit(500):
+                await create_notification(plan["user_id"], "bucket_recs", actor_id=user["id"], payload={"city_id": city["id"], "city_name": city.get("name")})
+    except Exception:
+        pass
     rec.pop("_id", None)
     return {**rec, "city": city}
 
@@ -1276,7 +1621,7 @@ async def places_details(place_id: str, user: dict = Depends(current_user)):
             f"https://places.googleapis.com/v1/places/{place_id}",
             headers={
                 "X-Goog-Api-Key": GOOGLE_PLACES_KEY,
-                "X-Goog-FieldMask": "id,displayName,formattedAddress,addressComponents,location",
+                "X-Goog-FieldMask": "id,displayName,formattedAddress,addressComponents,location,rating,priceLevel,currentOpeningHours,regularOpeningHours,photos,googleMapsUri",
                 "Referer": FRONTEND_URL,
             },
             timeout=10,
@@ -1287,7 +1632,7 @@ async def places_details(place_id: str, user: dict = Depends(current_user)):
         data = r.json()
         display = (data.get("displayName") or {}).get("text") or ""
         formatted = data.get("formattedAddress") or ""
-        # Extract city and country from address components
+        # Extract city and country
         city = ""; country = ""; country_code = ""
         for c in data.get("addressComponents", []):
             types = c.get("types", [])
@@ -1298,17 +1643,98 @@ async def places_details(place_id: str, user: dict = Depends(current_user)):
             if "country" in types:
                 country = c.get("longText") or ""
                 country_code = c.get("shortText") or ""
+        # Opening status
+        opening = data.get("currentOpeningHours") or data.get("regularOpeningHours") or {}
+        open_now = opening.get("openNow")
+        # First photo name (we'll proxy bytes via /api/places/photo)
+        photos = data.get("photos") or []
+        photo_name = photos[0].get("name") if photos else None
         return {
             "place_id": data.get("id") or place_id,
             "display_name": display,
             "formatted_address": formatted,
             "city": city, "country": country, "country_code": country_code,
+            "rating": data.get("rating"),
+            "price_level": data.get("priceLevel"),
+            "open_now": open_now,
+            "google_maps_uri": data.get("googleMapsUri"),
+            "photo_name": photo_name,
         }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Place details error: {e}")
         raise HTTPException(status_code=400, detail="Couldn't fetch place details")
+
+
+@api.get("/places/photo")
+async def places_photo(name: str = Query(..., description="Google Places photo name e.g. places/X/photos/Y"),
+                      max_width: int = 1024, user: dict = Depends(current_user)):
+    """Proxy for Google Places photo bytes — keeps the API key server-side."""
+    if not GOOGLE_PLACES_KEY:
+        raise HTTPException(status_code=503, detail="Places API not configured")
+    try:
+        r = requests.get(
+            f"https://places.googleapis.com/v1/{name}/media",
+            params={"maxWidthPx": max_width, "skipHttpRedirect": "false"},
+            headers={"X-Goog-Api-Key": GOOGLE_PLACES_KEY, "Referer": FRONTEND_URL},
+            timeout=15, allow_redirects=True,
+        )
+        if r.status_code != 200:
+            raise HTTPException(status_code=404, detail="Photo not found")
+        return Response(content=r.content, media_type=r.headers.get("Content-Type", "image/jpeg"))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Place photo error: {e}")
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+
+# ----------------------- Place detail (Freccos data) -----------------------
+def _place_match_filter(place_id: Optional[str], place_name: str) -> dict:
+    if place_id:
+        return {"place_id": place_id}
+    return {"place_name_normalized": slugify(place_name)}
+
+
+@api.get("/places/recommendations")
+async def place_recommendations(
+    place_id: Optional[str] = None,
+    place_name: Optional[str] = None,
+    city_id: Optional[str] = None,
+    user: dict = Depends(current_user),
+):
+    """All visible friend recommendations for a given place (matching by place_id or normalised name)."""
+    if not place_id and not place_name:
+        raise HTTPException(status_code=400, detail="place_id or place_name required")
+    following_ids = user.get("following", []) + [user["id"]]
+    blocked = set(user.get("blocked", []))
+    q: dict = {"user_id": {"$in": following_ids}}
+    if place_id:
+        q["place_id"] = place_id
+    else:
+        q["place_name_normalized"] = slugify(place_name)
+    if city_id:
+        q["city_id"] = city_id
+    recs = []
+    async for r in db.recommendations.find(q, {"_id": 0}).sort("created_at", -1).limit(200):
+        if r["user_id"] in blocked:
+            continue
+        recs.append(r)
+    user_ids = list({r["user_id"] for r in recs})
+    users = {}
+    async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "password_hash": 0}).limit(200):
+        users[u["id"]] = public_user_brief(u)
+    save_count = await db.trip_plans.count_documents({"saved_recs.recommendation_id": {"$in": [r["id"] for r in recs]}})
+    return {
+        "contributors": [
+            {"id": r["id"], "user": users.get(r["user_id"]), "note": r.get("note"),
+             "category": r.get("category"), "photo_url": r.get("photo_url"),
+             "created_at": r.get("created_at")}
+            for r in recs if r["user_id"] in users
+        ],
+        "save_count": save_count,
+    }
 
 
 # ----------------------- Mount router + CORS -----------------------

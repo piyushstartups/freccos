@@ -27,7 +27,7 @@ export default function TripPlans() {
           <Briefcase size={36} color="#C7C7CC" />
           <h3 className="t-title2 mt-3">Nothing on your bucket list yet</h3>
           <p className="t-sub muted mt-1">
-            Explore a city and save recommendations from friends, or tap + to add a city you're dreaming of.
+            Explore a city and save recommendations from friends, or tap + to add a city you&apos;re dreaming of.
           </p>
           <Link to="/explore" className="btn-pill btn-primary inline-flex mt-4">
             Explore cities
