@@ -37,6 +37,12 @@ Freccos is a private, invite-only travel recommendations PWA solving Discovery, 
 - P2: PWA icon-set generated from real brand artwork (currently programmatic)
 - P2: rec save tied to per-place identity also across cities (cross-city dedupe)
 
+## Design refinements (Feb 2026)
+- iOS-standard headers across all internal pages: left-aligned, 28px bold title, secondary subtitle, dark #1C1C1E
+- Explore is the only centred header — Vogue-style serif Wordmark (Cormorant Garamond/Playfair, 38px, 600, +2px letter-spacing) + bell-only top-right
+- Logo mark removed from every screen except Splash and Login (Signup/Forgot/AuthCallback now show the Wordmark)
+- Profile hero redesigned: avatar left, name + lock inline, bio + IG handle, single-line stats row, compact flag grid, horizontally scrollable milestone chips, joined date as tertiary text — Apple-Music/iOS-contact card density
+
 ## Next tasks
 - Wire optional email provider for password reset
 - Add web push for "new rec in [City] from [Friend]"

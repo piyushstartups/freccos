@@ -20,7 +20,7 @@ export default function TripPlans() {
 
   return (
     <div className="pb-32 fade-in" data-testid="trips-page">
-      <HeaderBrand title="Bucket list" subtitle="Cities you're planning, sorted out." />
+      <HeaderBrand title="Bucket list" subtitle="Cities you're planning to visit." />
 
       {plans.length === 0 && (
         <div className="px-6 mt-8" data-testid="trips-empty">

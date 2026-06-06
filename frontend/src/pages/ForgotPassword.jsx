@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import api, { formatApiErrorDetail } from "../lib/api";
-import { FreccosLogo } from "./Splash";
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -21,9 +20,8 @@ export default function ForgotPassword() {
 
   return (
     <div style={{ minHeight: "100vh" }}>
-      <div style={{ background: "#1C1C1E", color: "#fff", padding: "40px 24px 24px", textAlign: "center" }}>
-        <FreccosLogo size={48} />
-        <h1 className="t-title1 mt-2" style={{ color: "#fff" }}>Reset password</h1>
+      <div style={{ background: "#1C1C1E", color: "#fff", padding: "28px 16px 22px" }}>
+        <h1 style={{ color: "#fff", fontSize: 28, fontWeight: 700, letterSpacing: "-0.4px", lineHeight: 1.15, margin: 0 }}>Reset password</h1>
       </div>
       <form onSubmit={submit} className="p-4">
         {!done ? (

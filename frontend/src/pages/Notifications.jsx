@@ -52,11 +52,11 @@ export default function Notifications() {
 
   return (
     <div className="pb-32 fade-in" data-testid="notifications-page">
-      <div style={{ background: "#1C1C1E", color: "#fff", padding: "28px 16px 16px" }}>
-        <button onClick={() => nav(-1)} style={{ background: "transparent", border: "none", color: "#0A84FF", display: "inline-flex", alignItems: "center" }}>
-          <ChevronLeft size={18} /> Back
+      <div style={{ background: "#1C1C1E", color: "#fff", padding: "20px 16px 18px" }}>
+        <button onClick={() => nav(-1)} style={{ background: "transparent", border: "none", color: "#0A84FF", display: "inline-flex", alignItems: "center", padding: 0, marginBottom: 8, fontSize: 15 }}>
+          <ChevronLeft size={20} /> Back
         </button>
-        <h1 className="t-large mt-2" style={{ color: "#fff" }}>Notifications</h1>
+        <h1 style={{ color: "#fff", fontSize: 28, fontWeight: 700, letterSpacing: "-0.4px", lineHeight: 1.15, margin: 0 }}>Notifications</h1>
       </div>
 
       <div className="px-4 pt-3" style={{ position: "sticky", top: 0, background: "#F2F2F7", zIndex: 5 }}>

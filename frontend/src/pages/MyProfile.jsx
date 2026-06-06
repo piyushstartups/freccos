@@ -276,113 +276,133 @@ export default function MyProfile() {
 }
 
 function ProfileHero({ profile, cityCount, countryCount, countries, milestones, joined, countryFilter, setCountryFilter, onSettings, onTapFollowers, onTapFollowing }) {
+  const followers = profile.follower_count || 0;
+  const following = profile.following_count || 0;
   return (
-    <div style={{ background: "#1C1C1E", color: "#fff", padding: "32px 16px 24px", position: "relative", overflow: "hidden" }} data-testid="profile-hero">
-      {/* Decorative dim world background */}
-      <div aria-hidden style={{
-        position: "absolute", inset: 0, opacity: 0.25, pointerEvents: "none",
-        background: "radial-gradient(circle at 20% 30%, #2c2c2e 0 35%, transparent 35%), radial-gradient(circle at 80% 60%, #2c2c2e 0 30%, transparent 30%), radial-gradient(circle at 50% 80%, #2c2c2e 0 25%, transparent 25%)",
-      }} />
-      <div style={{ position: "relative" }}>
-        <div className="flex items-center justify-end">
-          <button data-testid="settings-btn" onClick={onSettings}
-            style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#fff",
-              width: 44, height: 44, display: "inline-flex", alignItems: "center", justifyContent: "center",
-              borderRadius: 9999 }}
-            aria-label="Settings">
-            <Settings size={24} />
-          </button>
-        </div>
-        <div className="flex items-center gap-3 mt-2">
-          <Avatar user={profile} size={80} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 className="t-title1" style={{ color: "#fff" }}>
+    <div style={{ background: "#1C1C1E", color: "#fff", padding: "20px 16px 18px", position: "relative" }} data-testid="profile-hero">
+      {/* Settings gear, top-right */}
+      <button
+        data-testid="settings-btn"
+        onClick={onSettings}
+        aria-label="Settings"
+        style={{
+          position: "absolute", top: 14, right: 8,
+          background: "transparent", border: "none", color: "#fff",
+          width: 44, height: 44, display: "inline-flex", alignItems: "center", justifyContent: "center",
+          borderRadius: 9999,
+        }}
+      >
+        <Settings size={24} strokeWidth={1.8} />
+      </button>
+
+      {/* Identity row: avatar left, name + bio + handle right (all left-aligned) */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 14, paddingRight: 44 }}>
+        <Avatar user={profile} size={64} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <h1 style={{ color: "#fff", fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: "-0.3px", lineHeight: 1.1 }}>
               {profile.name}
-              {profile.is_private && <Lock size={14} style={{ marginLeft: 6, color: "#8E8E93", verticalAlign: "middle" }} />}
             </h1>
-            {profile.bio && <p className="t-sub" style={{ color: "#C7C7CC" }}>{profile.bio}</p>}
-            {profile.instagram_handle && (
-              <a
-                href={`https://instagram.com/${profile.instagram_handle}`}
-                target="_blank" rel="noreferrer"
-                style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, textDecoration: "none", color: "#fff" }}
-                data-testid="profile-ig"
-              >
-                <span style={{ background: INSTAGRAM_GRADIENT, padding: 3, borderRadius: 6, display: "inline-flex" }}>
-                  <Instagram size={12} color="#fff" />
-                </span>
-                <span className="t-cap" style={{ color: "#C7C7CC" }}>@{profile.instagram_handle}</span>
-              </a>
-            )}
+            {profile.is_private && <Lock size={14} style={{ color: "#8E8E93" }} aria-label="Private account" />}
           </div>
+          {profile.bio && (
+            <p style={{ color: "#C7C7CC", fontSize: 14, margin: "4px 0 0", lineHeight: 1.3 }}>{profile.bio}</p>
+          )}
+          {profile.instagram_handle && (
+            <a
+              href={`https://instagram.com/${profile.instagram_handle}`}
+              target="_blank" rel="noreferrer"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, textDecoration: "none", color: "#fff" }}
+              data-testid="profile-ig"
+            >
+              <span style={{ background: INSTAGRAM_GRADIENT, padding: 2, borderRadius: 5, display: "inline-flex" }}>
+                <Instagram size={11} color="#fff" />
+              </span>
+              <span style={{ color: "#C7C7CC", fontSize: 12 }}>@{profile.instagram_handle}</span>
+            </a>
+          )}
         </div>
-
-        <div className="flex items-center gap-8 mt-6">
-          <div data-testid="hero-places">
-            <div style={{ color: "#fff", fontSize: 32, fontWeight: 700, lineHeight: 1 }}>{cityCount}</div>
-            <div className="t-cap" style={{ color: "#8E8E93", marginTop: 4 }}>Places</div>
-          </div>
-          <div data-testid="hero-countries">
-            <div style={{ color: "#fff", fontSize: 32, fontWeight: 700, lineHeight: 1 }}>{countryCount}</div>
-            <div className="t-cap" style={{ color: "#8E8E93", marginTop: 4 }}>Countries</div>
-          </div>
-        </div>
-
-        <div className="flex gap-4 mt-3 t-cap" style={{ color: "#8E8E93" }}>
-          <button data-testid="hero-followers" onClick={onTapFollowers} style={{ background: "transparent", border: "none", color: "#C7C7CC", padding: 0 }}>
-            <strong style={{ color: "#fff" }}>{profile.follower_count}</strong> followers
-          </button>
-          <span>·</span>
-          <button data-testid="hero-following" onClick={onTapFollowing} style={{ background: "transparent", border: "none", color: "#C7C7CC", padding: 0 }}>
-            <strong style={{ color: "#fff" }}>{profile.following_count}</strong> following
-          </button>
-        </div>
-
-        {/* Country flag grid */}
-        {countries.length > 0 ? (
-          <div className="mt-4 flex flex-wrap gap-2" data-testid="flag-grid">
-            {countries.map((country) => {
-              const active = countryFilter === country;
-              return (
-                <button
-                  key={country}
-                  onClick={() => setCountryFilter(active ? null : country)}
-                  className="chip"
-                  style={{
-                    padding: "6px 10px", fontSize: 18, lineHeight: 1,
-                    background: active ? "rgba(10,132,255,0.25)" : "rgba(255,255,255,0.08)",
-                    border: active ? "1px solid #0A84FF" : "1px solid transparent",
-                    color: "#fff",
-                  }}
-                  title={country}
-                >
-                  {flagForCountry(country)}
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="mt-4 flex gap-2" data-testid="flag-grid-empty">
-            {[1,2,3,4].map((i) => (
-              <div key={i} style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(229,229,234,0.12)", border: "1px dashed #3a3a3c" }} />
-            ))}
-          </div>
-        )}
-
-        {joined && (
-          <p className="t-cap" style={{ color: "#3a3a3c", marginTop: 12 }}>On Freccos since {joined}</p>
-        )}
-
-        {milestones.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2" data-testid="milestones">
-            {milestones.map((m) => (
-              <span key={m} className="chip" style={{ background: "rgba(255,255,255,0.08)", color: "#fff", fontSize: 11 }}>{m}</span>
-            ))}
-          </div>
-        )}
       </div>
+
+      {/* Stats row, one tight line */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 12, fontSize: 13, color: "#8E8E93", flexWrap: "wrap" }} data-testid="profile-stats-row">
+        <span data-testid="hero-places"><strong style={{ color: "#fff", fontWeight: 600 }}>{cityCount}</strong> {cityCount === 1 ? "Place" : "Places"}</span>
+        <Dot />
+        <span data-testid="hero-countries"><strong style={{ color: "#fff", fontWeight: 600 }}>{countryCount}</strong> {countryCount === 1 ? "Country" : "Countries"}</span>
+        <Dot />
+        <button data-testid="hero-followers" onClick={onTapFollowers} style={{ background: "transparent", border: "none", color: "#8E8E93", padding: 0, fontSize: 13 }}>
+          <strong style={{ color: "#fff", fontWeight: 600 }}>{followers}</strong> {followers === 1 ? "follower" : "followers"}
+        </button>
+        <Dot />
+        <button data-testid="hero-following" onClick={onTapFollowing} style={{ background: "transparent", border: "none", color: "#8E8E93", padding: 0, fontSize: 13 }}>
+          <strong style={{ color: "#fff", fontWeight: 600 }}>{following}</strong> following
+        </button>
+      </div>
+
+      {/* Flag grid — compact */}
+      {countries.length > 0 ? (
+        <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 6 }} data-testid="flag-grid">
+          {countries.map((country) => {
+            const active = countryFilter === country;
+            return (
+              <button
+                key={country}
+                onClick={() => setCountryFilter(active ? null : country)}
+                title={country}
+                style={{
+                  padding: "4px 8px", fontSize: 18, lineHeight: 1,
+                  background: active ? "rgba(10,132,255,0.25)" : "rgba(255,255,255,0.08)",
+                  border: active ? "1px solid #0A84FF" : "1px solid transparent",
+                  color: "#fff", borderRadius: 8, cursor: "pointer",
+                }}
+              >
+                {flagForCountry(country)}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div style={{ marginTop: 12, display: "flex", gap: 6 }} data-testid="flag-grid-empty">
+          {[1,2,3,4].map((i) => (
+            <div key={i} style={{ width: 28, height: 28, borderRadius: 6, background: "rgba(229,229,234,0.08)", border: "1px dashed #3a3a3c" }} />
+          ))}
+        </div>
+      )}
+
+      {/* Milestones — single horizontal scroll row */}
+      {milestones.length > 0 && (
+        <div
+          data-testid="milestones"
+          style={{
+            marginTop: 10, display: "flex", gap: 6,
+            overflowX: "auto", scrollbarWidth: "none",
+            WebkitOverflowScrolling: "touch",
+            paddingBottom: 2,
+          }}
+        >
+          {milestones.map((m) => (
+            <span
+              key={m}
+              style={{
+                background: "rgba(255,255,255,0.08)", color: "#fff", fontSize: 11,
+                padding: "4px 9px", borderRadius: 9999, whiteSpace: "nowrap", flexShrink: 0,
+              }}
+            >
+              {m}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {joined && (
+        <p style={{ color: "#5A5A5F", fontSize: 11, marginTop: 10, marginBottom: 0 }}>On Freccos since {joined}</p>
+      )}
     </div>
   );
+}
+
+function Dot() {
+  return <span style={{ color: "#3a3a3c" }}>·</span>;
 }
 
 function PhotoCollage({ photos }) {

@@ -25,7 +25,7 @@ export default function Splash() {
     >
       <FreccosLogo size={72} />
       <div style={{ marginTop: 22 }}>
-        <Wordmark size={42} color="#fff" />
+        <Wordmark size={38} color="#fff" />
       </div>
       <p className="t-sub mt-3" style={{ color: "#8E8E93" }}>The places your friends actually love.</p>
     </div>

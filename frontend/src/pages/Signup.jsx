@@ -2,7 +2,7 @@ import React, { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api, { formatApiErrorDetail } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { FreccosLogo } from "./Splash";
+import Wordmark from "../components/Wordmark";
 import { Check, Loader2, Camera, ArrowLeft } from "lucide-react";
 
 export default function Signup() {
@@ -95,7 +95,7 @@ export default function Signup() {
         style={{ background: "#1C1C1E", color: "#fff", padding: "44px 24px 30px", textAlign: "center" }}
       >
         <div style={{ display: "flex", justifyContent: "center" }}>
-          <FreccosLogo size={64} />
+          <Wordmark size={34} color="#fff" />
         </div>
         <h1 className="t-title1 mt-3" style={{ color: "#fff" }}>Join your friends on Freccos</h1>
         <p className="t-cap" style={{ color: "#8E8E93" }}>Step {step} of 3</p>

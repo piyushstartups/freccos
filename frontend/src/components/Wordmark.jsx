@@ -1,19 +1,23 @@
 import React from "react";
 
-// The Freccos wordmark — premium editorial serif, NOT italic. Used on splash, login
-// and the Explore header. This is the brand moment.
-export default function Wordmark({ size = 36, color = "#1C1C1E", className = "", style = {} }) {
+// The Freccos wordmark — Vogue-style serif masthead.
+// Always rendered in the imported Google Font (Cormorant Garamond / Playfair Display),
+// semibold 600, with generous letter-spacing for an editorial feel.
+export default function Wordmark({ size = 38, color = "#fff", className = "", style = {} }) {
   return (
     <span
       className={className}
       style={{
-        fontFamily: "'Cormorant Garamond', 'Playfair Display', Georgia, serif",
+        fontFamily: "'Cormorant Garamond', 'Playfair Display', Georgia, 'Times New Roman', serif",
         fontWeight: 600,
         fontSize: size,
-        letterSpacing: 1.2,
+        letterSpacing: "2px",
         lineHeight: 1,
         color,
         display: "inline-block",
+        fontFeatureSettings: '"liga" 1, "kern" 1',
+        WebkitFontSmoothing: "antialiased",
+        MozOsxFontSmoothing: "grayscale",
         ...style,
       }}
     >

@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import api from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { FreccosLogo } from "./Splash";
+import Wordmark from "../components/Wordmark";
 
 export default function AuthCallback() {
   const nav = useNavigate();
@@ -38,7 +38,7 @@ export default function AuthCallback() {
       minHeight: "100vh", background: "#1C1C1E", color: "#fff",
       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
     }}>
-      <FreccosLogo />
+      <Wordmark size={36} color="#fff" />
       <p className="t-sub mt-4" style={{ color: "#8E8E93" }}>Signing you in...</p>
     </div>
   );

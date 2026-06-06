@@ -3,8 +3,6 @@ import { Link, useNavigate } from "react-router-dom";
 import api from "../lib/api";
 import StackedAvatars from "../components/StackedAvatars";
 import Wordmark from "../components/Wordmark";
-import Avatar from "../components/Avatar";
-import { useAuth } from "../lib/auth";
 import { Search, Bell } from "lucide-react";
 
 export default function Explore() {
@@ -12,7 +10,6 @@ export default function Explore() {
   const [q, setQ] = useState("");
   const [unread, setUnread] = useState(0);
   const nav = useNavigate();
-  const { user } = useAuth();
 
   useEffect(() => {
     (async () => {
@@ -30,26 +27,22 @@ export default function Explore() {
   return (
     <div className="pb-32 fade-in" data-testid="explore-page">
       <div style={{ background: "#1C1C1E", color: "#fff", padding: "28px 16px 22px", position: "relative", textAlign: "center" }}>
-        {/* Centered wordmark with corner actions */}
         <button
           data-testid="explore-bell"
           onClick={() => nav("/notifications")}
-          style={{ position: "absolute", left: 16, top: 30, background: "rgba(255,255,255,0.08)", border: "none", color: "#fff", padding: 8, borderRadius: 9999, position: "absolute" }}
+          style={{ position: "absolute", right: 8, top: 18, background: "transparent", border: "none", color: "#fff",
+            width: 44, height: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 9999 }}
           aria-label="Notifications"
         >
-          <Bell size={20} />
-          {unread > 0 && <span style={{ position: "absolute", top: 4, right: 4, width: 9, height: 9, background: "#FF453A", borderRadius: 5, border: "2px solid #1C1C1E" }} />}
+          <Bell size={22} strokeWidth={1.8} />
+          {unread > 0 && <span style={{ position: "absolute", top: 10, right: 10, width: 9, height: 9, background: "#FF453A", borderRadius: 5, border: "2px solid #1C1C1E" }} />}
         </button>
-        <Wordmark size={34} color="#fff" />
-        <button
-          data-testid="explore-me"
-          onClick={() => nav("/me")}
-          style={{ position: "absolute", right: 16, top: 26, background: "transparent", border: "none", padding: 0 }}
-          aria-label="Your profile"
-        >
-          <Avatar user={user} size={32} style={{ border: "2px solid rgba(255,255,255,0.2)" }} />
-        </button>
-        <p className="t-sub mt-2" style={{ color: "#8E8E93" }}>Real places. Recommended by people you trust.</p>
+        <div style={{ paddingTop: 4 }}>
+          <Wordmark size={38} color="#fff" />
+        </div>
+        <p style={{ color: "#8E8E93", fontSize: 13, marginTop: 10, letterSpacing: 0.2 }}>
+          Real places. Recommended by people you trust.
+        </p>
       </div>
 
       <div className="px-4 py-3" style={{ position: "sticky", top: 0, background: "#F2F2F7", zIndex: 5 }}>
