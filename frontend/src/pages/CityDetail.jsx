@@ -66,13 +66,29 @@ export default function CityDetail() {
 
   return (
     <div className="pb-32 fade-in" data-testid="city-detail">
-      <div style={{ background: "#1C1C1E", color: "#fff", padding: "44px 16px 16px" }}>
-        <Link to="/explore" style={{ color: "#0A84FF", display: "inline-flex", alignItems: "center", textDecoration: "none" }}>
-          <ChevronLeft size={18} /> Explore
+      <div style={{ background: "#1C1C1E", color: "#fff", padding: "20px 16px 18px", position: "relative" }}>
+        <Link to="/explore" style={{ color: "#0A84FF", display: "inline-flex", alignItems: "center", textDecoration: "none", fontSize: 15 }}>
+          <ChevronLeft size={20} /> Explore
         </Link>
-        <div style={{ fontSize: 36, marginTop: 6 }}>{city?.flag_emoji || "🌍"}</div>
-        <h1 className="t-large" style={{ color: "#fff" }}>{city?.name || "..."}</h1>
-        <p className="t-sub" style={{ color: "#8E8E93" }}>
+        {/* Flag pinned to top-right — minimal, decorative anchor */}
+        <span
+          aria-hidden
+          style={{
+            position: "absolute",
+            top: 18,
+            right: 16,
+            fontSize: 32,
+            lineHeight: 1,
+            opacity: 0.95,
+          }}
+        >
+          {city?.flag_emoji || "🌍"}
+        </span>
+        <h1 style={{ color: "#fff", fontSize: 28, fontWeight: 700, letterSpacing: "-0.4px", lineHeight: 1.15, margin: "10px 0 0", paddingRight: 56 }}>
+          {city?.name || "..."}
+        </h1>
+        <p style={{ color: "#8E8E93", fontSize: 14, margin: "6px 0 0", paddingRight: 56 }}>
+          {city?.country ? `${city.country} · ` : ""}
           {friends.length} {friends.length === 1 ? "friend has" : "friends have"} been here
         </p>
 

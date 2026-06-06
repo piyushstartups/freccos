@@ -67,10 +67,16 @@ export default function MyProfile() {
 
   const startEdit = (rec) => { setMenuRecId(null); setEditingRec(rec); setAddRecLockedCity(null); setAddRecOpen(true); };
 
-  const deleteTrip = async (cityId) => {
-    if (!window.confirm("Remove this city from your trips? Any recommendations you've added stay safe.")) return;
-    try { await api.delete(`/trips/${cityId}`); toast("Removed from trips"); load(); }
-    catch { toast.error("Couldn't remove"); }
+  const deleteTrip = async (cityId, cityName) => {
+    if (!window.confirm(`Remove ${cityName || "this city"} from your profile? This will permanently delete the trip and every recommendation you added there.`)) return;
+    try {
+      await api.delete(`/trips/${cityId}`);
+      toast("Removed from your profile");
+      setOpenCityId(null);
+      setMyRecs([]);
+      setCategory("all");
+      await load();
+    } catch { toast.error("Couldn't remove"); }
   };
 
   if (!user || !profile) return <div className="p-6 t-sub muted">Loading...</div>;
@@ -173,12 +179,20 @@ export default function MyProfile() {
               <button data-testid="me-city-add-rec" onClick={() => { setEditingRec(null); setAddRecLockedCity(cityOpen); setAddRecOpen(true); }} className="btn-pill" style={{ background: "rgba(10,132,255,0.12)", color: "#0A84FF", padding: "8px 12px", fontSize: 13 }}>
                 <Plus size={14} /> Add a rec
               </button>
-              <button onClick={() => deleteTrip(cityOpen.id)} style={{ background: "transparent", border: "none", color: "#8E8E93", padding: 6 }} title="Remove from trips">
+              <button data-testid={`me-delete-trip-${cityOpen.id}`} onClick={() => deleteTrip(cityOpen.id, cityOpen.name)} style={{ background: "transparent", border: "none", color: "#FF453A", padding: 6 }} title="Delete this city">
                 <Trash2 size={16} />
               </button>
             </div>
           </div>
-          <h2 className="t-title1 px-4 mt-1">{cityOpen.flag_emoji} {cityOpen.name}</h2>
+          <div className="px-4 pt-3 mt-1" style={{ position: "relative" }}>
+            <span aria-hidden style={{ position: "absolute", top: 32, right: 16, fontSize: 30, lineHeight: 1, opacity: 0.95 }}>
+              {cityOpen.flag_emoji}
+            </span>
+            <h2 className="t-title1" style={{ paddingRight: 56, margin: 0 }}>{cityOpen.name}</h2>
+            {cityOpen.country && (
+              <p className="t-cap muted" style={{ marginTop: 2 }}>{cityOpen.country}</p>
+            )}
+          </div>
           <CategoryTabs value={category} onChange={setCategory} />
           <div className="px-4 space-y-3">
             {myRecs.length === 0 && (

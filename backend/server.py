@@ -1443,10 +1443,16 @@ async def add_trip(req: TripReq, user: dict = Depends(current_user)):
 
 @api.delete("/trips/{city_id}")
 async def delete_trip(city_id: str, user: dict = Depends(current_user)):
-    # Remove explicit trip entry
-    await db.user_trips.delete_one({"user_id": user["id"], "city_id": city_id})
-    # Note: existing recommendations for this city remain unless user deletes them individually.
-    return {"ok": True}
+    """Remove this city entirely from the user's profile.
+
+    Cascades to: the user_trips entry, every recommendation the user added in that city,
+    and any bucket-list/trip-plan entry for that city.  Other users' data is never touched.
+    """
+    uid = user["id"]
+    await db.user_trips.delete_one({"user_id": uid, "city_id": city_id})
+    rec_res = await db.recommendations.delete_many({"user_id": uid, "city_id": city_id})
+    await db.trip_plans.delete_one({"user_id": uid, "city_id": city_id})
+    return {"ok": True, "deleted_recommendations": rec_res.deleted_count}
 
 
 # ----------------------- Trip Plans / Bucket List -----------------------
