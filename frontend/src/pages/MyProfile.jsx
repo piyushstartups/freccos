@@ -386,12 +386,9 @@ function ProfileHero({ profile, cityCount, countryCount, countries, joined, coun
       <div style={{ display: "flex", alignItems: "flex-start", gap: 14, paddingRight: 44 }}>
         <Avatar user={profile} size={64} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            <h1 style={{ color: "#fff", fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: "-0.3px", lineHeight: 1.1 }}>
-              {profile.name}
-            </h1>
-            {profile.is_private && <Lock size={14} style={{ color: "#8E8E93" }} aria-label="Private account" />}
-          </div>
+          <h1 style={{ color: "#fff", fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: "-0.3px", lineHeight: 1.1 }}>
+            {profile.name}
+          </h1>
           {profile.bio && (
             <p style={{ color: "#C7C7CC", fontSize: 14, margin: "4px 0 0", lineHeight: 1.3 }}>{profile.bio}</p>
           )}

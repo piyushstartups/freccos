@@ -4,7 +4,7 @@ import api from "../lib/api";
 import Avatar from "../components/Avatar";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
 import {
-  ChevronLeft, UserCheck, UserPlus, MessageCircle, Bookmark, Lock,
+  ChevronLeft, UserCheck, UserPlus, MessageCircle, Bookmark,
   Instagram, MoreHorizontal, ShieldOff, Clock,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -12,6 +12,23 @@ import { formatMonthYear } from "../lib/utils-frec";
 import { flagForCountry } from "../lib/flags";
 
 const INSTAGRAM_GRADIENT = "linear-gradient(135deg,#f09433 0%,#e6683c 25%,#dc2743 50%,#cc2366 75%,#bc1888 100%)";
+
+function Stat({ n, label, onClick, testId, disabled }) {
+  const inner = (
+    <>
+      <div style={{ color: "#fff", fontSize: 22, fontWeight: 700, lineHeight: 1, letterSpacing: "-0.4px" }}>{n}</div>
+      <div style={{ color: "#8E8E93", fontSize: 11, fontWeight: 500, letterSpacing: 0.3, marginTop: 4, textTransform: "uppercase" }}>{label}</div>
+    </>
+  );
+  if (onClick && !disabled) {
+    return (
+      <button data-testid={testId} onClick={onClick} style={{ background: "transparent", border: "none", padding: 0, textAlign: "left", cursor: "pointer" }}>
+        {inner}
+      </button>
+    );
+  }
+  return <div data-testid={testId}>{inner}</div>;
+}
 
 export default function FriendProfile() {
   const { userId } = useParams();
@@ -93,72 +110,127 @@ export default function FriendProfile() {
   const byCountry = {};
   for (const c of profile.cities || []) (byCountry[c.country || "Other"] = byCountry[c.country || "Other"] || []).push(c);
 
+  const countries = Object.keys(byCountry).filter((c) => c !== "Other");
+  const joined = profile.created_at
+    ? new Date(profile.created_at).toLocaleDateString(undefined, { month: "long", year: "numeric" })
+    : null;
+  const followers = profile.follower_count || 0;
+  const following = profile.following_count || 0;
+
   return (
     <div className="pb-32 fade-in" data-testid="friend-profile">
-      <div className="app-header" style={{ background: "#1C1C1E", color: "#fff", padding: "32px 16px 22px", position: "relative" }}>
-        <div className="flex items-center justify-between">
-          <button onClick={() => nav(-1)} style={{ color: "#0A84FF", display: "inline-flex", alignItems: "center", background: "transparent", border: "none" }}>
-            <ChevronLeft size={18} /> Back
-          </button>
-          <button
-            data-testid="friend-menu"
-            onClick={() => setMenuOpen(!menuOpen)}
-            style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", padding: 8, borderRadius: 9999 }}
-          >
-            <MoreHorizontal size={16} />
-          </button>
-          {menuOpen && (
-            <>
-              <div onClick={() => setMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 50 }} />
-              <div className="ios-card" style={{ position: "absolute", right: 16, top: 64, zIndex: 51, padding: 4, minWidth: 180 }}>
-                <button data-testid="friend-block" onClick={blockUser} className="list-row w-full text-left" style={{ background: "transparent", border: "none", color: "#FF453A" }}>
-                  <ShieldOff size={14} /> Block {profile.name?.split(" ")[0]}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-        <div className="flex items-center gap-3 mt-3">
-          <Avatar user={profile} size={72} />
+      <div className="app-header" style={{ background: "#1C1C1E", color: "#fff", padding: "20px 16px 18px", position: "relative" }}>
+        <button onClick={() => nav(-1)} style={{ color: "#0A84FF", display: "inline-flex", alignItems: "center", background: "transparent", border: "none", padding: 0, fontSize: 15 }}>
+          <ChevronLeft size={20} /> Back
+        </button>
+
+        {/* Three-dot menu — top right, same position as settings gear on personal profile */}
+        <button
+          data-testid="friend-menu"
+          onClick={() => setMenuOpen(!menuOpen)}
+          aria-label="More"
+          style={{
+            position: "absolute", top: 22, right: 8,
+            background: "transparent", border: "none", color: "#fff",
+            width: 44, height: 44, display: "inline-flex", alignItems: "center", justifyContent: "center",
+            borderRadius: 9999,
+          }}
+        >
+          <MoreHorizontal size={22} strokeWidth={1.8} />
+        </button>
+        {menuOpen && (
+          <>
+            <div onClick={() => setMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 50 }} />
+            <div className="ios-card" style={{ position: "absolute", right: 16, top: 64, zIndex: 51, padding: 4, minWidth: 180 }}>
+              <button data-testid="friend-block" onClick={blockUser} className="list-row w-full text-left" style={{ background: "transparent", border: "none", color: "#FF453A" }}>
+                <ShieldOff size={14} /> Block {profile.name?.split(" ")[0]}
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* Identity row: avatar left, name + bio + handle right (all left-aligned) */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, paddingRight: 44, marginTop: 8 }}>
+          <Avatar user={profile} size={64} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 className="t-title1" style={{ color: "#fff" }}>
+            <h1 style={{ color: "#fff", fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: "-0.3px", lineHeight: 1.1 }}>
               {profile.name}
-              {profile.is_private && <Lock size={14} style={{ marginLeft: 6, color: "#8E8E93", verticalAlign: "middle" }} />}
             </h1>
-            {profile.bio && <p className="t-sub" style={{ color: "#C7C7CC" }}>{profile.bio}</p>}
+            {profile.bio && (
+              <p style={{ color: "#C7C7CC", fontSize: 14, margin: "4px 0 0", lineHeight: 1.3 }}>{profile.bio}</p>
+            )}
             {profile.instagram_handle && (
-              <a href={`https://instagram.com/${profile.instagram_handle}`} target="_blank" rel="noreferrer"
-                style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 4, textDecoration: "none", color: "#fff" }}>
-                <span style={{ background: INSTAGRAM_GRADIENT, padding: 3, borderRadius: 6, display: "inline-flex" }}>
-                  <Instagram size={12} color="#fff" />
+              <a
+                href={`https://instagram.com/${profile.instagram_handle}`}
+                target="_blank" rel="noreferrer"
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, textDecoration: "none", color: "#fff" }}
+              >
+                <span style={{ background: INSTAGRAM_GRADIENT, padding: 2, borderRadius: 5, display: "inline-flex" }}>
+                  <Instagram size={11} color="#fff" />
                 </span>
-                <span className="t-cap" style={{ color: "#C7C7CC" }}>@{profile.instagram_handle}</span>
+                <span style={{ color: "#C7C7CC", fontSize: 12 }}>@{profile.instagram_handle}</span>
               </a>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-6 mt-4">
-          <div><div style={{ color: "#fff", fontSize: 24, fontWeight: 700 }} data-testid="stat-cities">{profile.city_count}</div><div className="t-cap" style={{ color: "#8E8E93" }}>Places</div></div>
-          <div><div style={{ color: "#fff", fontSize: 24, fontWeight: 700 }} data-testid="stat-countries">{profile.country_count}</div><div className="t-cap" style={{ color: "#8E8E93" }}>Countries</div></div>
-        </div>
-        <div className="flex gap-4 mt-2 t-cap" style={{ color: "#8E8E93" }}>
-          <button onClick={() => profile.can_view && nav(`/user/${userId}/followers`)} style={{ background: "transparent", border: "none", color: "#C7C7CC", padding: 0 }}>
-            <strong style={{ color: "#fff" }}>{profile.follower_count}</strong> followers
-          </button>
-          <span>·</span>
-          <button onClick={() => profile.can_view && nav(`/user/${userId}/following`)} style={{ background: "transparent", border: "none", color: "#C7C7CC", padding: 0 }}>
-            <strong style={{ color: "#fff" }}>{profile.following_count}</strong> following
-          </button>
+        {/* Stats — bold prominent numbers, identical treatment to personal profile */}
+        <div
+          style={{ display: "flex", alignItems: "baseline", gap: 18, marginTop: 14, flexWrap: "wrap" }}
+          data-testid="profile-stats-row"
+        >
+          <Stat n={profile.city_count} label={profile.city_count === 1 ? "Place" : "Places"} testId="stat-cities" />
+          <Stat n={profile.country_count} label={profile.country_count === 1 ? "Country" : "Countries"} testId="stat-countries" />
+          <Stat n={followers} label={followers === 1 ? "Follower" : "Followers"}
+                onClick={() => profile.can_view && nav(`/user/${userId}/followers`)}
+                disabled={!profile.can_view} testId="stat-followers" />
+          <Stat n={following} label="Following"
+                onClick={() => profile.can_view && nav(`/user/${userId}/following`)}
+                disabled={!profile.can_view} testId="stat-following" />
         </div>
 
+        {/* Country flag grid — compact, same as personal profile */}
+        {countries.length > 0 ? (
+          <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 6 }} data-testid="friend-flag-grid">
+            {countries.map((country) => (
+              <span
+                key={country}
+                title={country}
+                style={{
+                  padding: "4px 8px", fontSize: 18, lineHeight: 1,
+                  background: "rgba(255,255,255,0.08)", color: "#fff",
+                  borderRadius: 8,
+                }}
+              >
+                {flagForCountry(country)}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div style={{ marginTop: 12, display: "flex", gap: 6 }} data-testid="friend-flag-grid-empty">
+            {[1,2,3,4].map((i) => (
+              <div key={i} style={{ width: 28, height: 28, borderRadius: 6, background: "rgba(229,229,234,0.08)", border: "1px dashed #3a3a3c" }} />
+            ))}
+          </div>
+        )}
+
+        {joined && (
+          <p style={{ color: "#5A5A5F", fontSize: 11, marginTop: 10, marginBottom: 0 }}>On Freccos since {joined}</p>
+        )}
+
+        {/* Follow / Following / Requested — full-width pill, own row, breathing room */}
         <button
           data-testid="follow-btn"
           onClick={toggleFollow}
-          className="btn-pill mt-4"
+          className="btn-pill"
           style={{
+            width: "100%",
+            marginTop: 16,
+            padding: "12px 18px",
             background: (profile.is_following || profile.request_status === "requested") ? "rgba(255,255,255,0.16)" : "#0A84FF",
             color: "#fff",
+            fontSize: 15,
+            fontWeight: 600,
           }}
         >
           {followBtnIcon}{followBtnLabel}
@@ -168,7 +240,6 @@ export default function FriendProfile() {
       {/* Private + not following: limited view */}
       {!profile.can_view && (
         <div className="px-6 mt-8" data-testid="private-locked">
-          <Lock size={28} color="#C7C7CC" />
           <h3 className="t-title2 mt-2">This account is private</h3>
           <p className="t-sub muted mt-1">
             Follow {profile.name?.split(" ")[0]} to see their recommendations, cities, and travel stats.
