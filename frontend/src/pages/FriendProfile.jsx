@@ -95,7 +95,7 @@ export default function FriendProfile() {
 
   return (
     <div className="pb-32 fade-in" data-testid="friend-profile">
-      <div style={{ background: "#1C1C1E", color: "#fff", padding: "32px 16px 22px", position: "relative" }}>
+      <div className="app-header" style={{ background: "#1C1C1E", color: "#fff", padding: "32px 16px 22px", position: "relative" }}>
         <div className="flex items-center justify-between">
           <button onClick={() => nav(-1)} style={{ color: "#0A84FF", display: "inline-flex", alignItems: "center", background: "transparent", border: "none" }}>
             <ChevronLeft size={18} /> Back

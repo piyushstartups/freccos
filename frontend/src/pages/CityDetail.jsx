@@ -66,7 +66,7 @@ export default function CityDetail() {
 
   return (
     <div className="pb-32 fade-in" data-testid="city-detail">
-      <div style={{ background: "#1C1C1E", color: "#fff", padding: "20px 16px 18px", position: "relative" }}>
+      <div className="app-header" style={{ background: "#1C1C1E", color: "#fff", padding: "20px 16px 18px", position: "relative" }}>
         <Link to="/explore" style={{ color: "#0A84FF", display: "inline-flex", alignItems: "center", textDecoration: "none", fontSize: 15 }}>
           <ChevronLeft size={20} /> Explore
         </Link>

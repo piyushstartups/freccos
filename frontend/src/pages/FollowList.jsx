@@ -55,7 +55,7 @@ export default function FollowList() {
 
   return (
     <div className="pb-32 fade-in" data-testid="follow-list-page">
-      <div style={{ background: "#1C1C1E", color: "#fff", padding: "32px 16px 18px" }}>
+      <div className="app-header" style={{ background: "#1C1C1E", color: "#fff", padding: "32px 16px 18px" }}>
         <button onClick={() => nav(-1)} style={{ background: "transparent", border: "none", color: "#0A84FF", display: "inline-flex", alignItems: "center" }}>
           <ChevronLeft size={18} /> Back
         </button>
@@ -70,8 +70,8 @@ export default function FollowList() {
       {list && list.length > 0 && (
         <div className="ios-card mx-4 mt-3" style={{ overflow: "hidden" }}>
           {list.map((u) => (
-            <div key={u.id} className="list-row" style={{ position: "relative" }} data-testid={`follow-row-${u.id}`}>
-              <Link to={`/user/${u.id}`} className="flex items-center gap-3" style={{ textDecoration: "none", color: "inherit", flex: 1 }}>
+            <div key={u.id} className="list-row" style={{ position: "relative", gap: 10 }} data-testid={`follow-row-${u.id}`}>
+              <Link to={`/user/${u.id}`} className="flex items-center gap-3" style={{ textDecoration: "none", color: "inherit", flex: 1, minWidth: 0 }}>
                 <Avatar user={u} size={40} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="t-title3" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.name}</div>
@@ -83,9 +83,11 @@ export default function FollowList() {
                   onClick={() => toggleFollow(u)}
                   className="btn-pill"
                   style={{
-                    padding: "6px 12px", fontSize: 12,
+                    padding: "6px 14px", fontSize: 12,
                     background: u.is_following ? "rgba(120,120,128,0.14)" : "#0A84FF",
                     color: u.is_following ? "#1C1C1E" : "#fff",
+                    flexShrink: 0,
+                    minWidth: 88,
                   }}
                 >
                   {u.is_following ? "Following" : "Follow"}
@@ -95,7 +97,7 @@ export default function FollowList() {
                 <button
                   data-testid={`follow-menu-${u.id}`}
                   onClick={() => setMenuId(menuId === u.id ? null : u.id)}
-                  style={{ background: "transparent", border: "none", marginLeft: 8, color: "#8E8E93" }}
+                  style={{ background: "transparent", border: "none", color: "#8E8E93", flexShrink: 0, padding: 4 }}
                 >
                   <MoreHorizontal size={18} />
                 </button>

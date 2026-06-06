@@ -366,7 +366,7 @@ function ProfileHero({ profile, cityCount, countryCount, countries, joined, coun
   const followers = profile.follower_count || 0;
   const following = profile.following_count || 0;
   return (
-    <div style={{ background: "#1C1C1E", color: "#fff", padding: "28px 16px 18px", position: "relative" }} data-testid="profile-hero">
+    <div className="app-header" style={{ background: "#1C1C1E", color: "#fff", padding: "28px 16px 18px", position: "relative" }} data-testid="profile-hero">
       {/* Settings gear, top-right */}
       <button
         data-testid="settings-btn"
@@ -411,19 +411,17 @@ function ProfileHero({ profile, cityCount, countryCount, countries, joined, coun
         </div>
       </div>
 
-      {/* Stats row, one tight line */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 12, fontSize: 13, color: "#8E8E93", flexWrap: "wrap" }} data-testid="profile-stats-row">
-        <span data-testid="hero-places"><strong style={{ color: "#fff", fontWeight: 600 }}>{cityCount}</strong> {cityCount === 1 ? "Place" : "Places"}</span>
-        <Dot />
-        <span data-testid="hero-countries"><strong style={{ color: "#fff", fontWeight: 600 }}>{countryCount}</strong> {countryCount === 1 ? "Country" : "Countries"}</span>
-        <Dot />
-        <button data-testid="hero-followers" onClick={onTapFollowers} style={{ background: "transparent", border: "none", color: "#8E8E93", padding: 0, fontSize: 13 }}>
-          <strong style={{ color: "#fff", fontWeight: 600 }}>{followers}</strong> {followers === 1 ? "follower" : "followers"}
-        </button>
-        <Dot />
-        <button data-testid="hero-following" onClick={onTapFollowing} style={{ background: "transparent", border: "none", color: "#8E8E93", padding: 0, fontSize: 13 }}>
-          <strong style={{ color: "#fff", fontWeight: 600 }}>{following}</strong> following
-        </button>
+      {/* Stats — bold, prominent numbers with small labels (Apple Music-style metrics) */}
+      <div
+        style={{
+          display: "flex", alignItems: "baseline", gap: 18, marginTop: 14, flexWrap: "wrap",
+        }}
+        data-testid="profile-stats-row"
+      >
+        <Stat n={cityCount} label={cityCount === 1 ? "Place" : "Places"} testId="hero-places" />
+        <Stat n={countryCount} label={countryCount === 1 ? "Country" : "Countries"} testId="hero-countries" />
+        <Stat n={followers} label={followers === 1 ? "Follower" : "Followers"} onClick={onTapFollowers} testId="hero-followers" />
+        <Stat n={following} label="Following" onClick={onTapFollowing} testId="hero-following" />
       </div>
 
       {/* Flag grid — compact */}
@@ -463,6 +461,23 @@ function ProfileHero({ profile, cityCount, countryCount, countries, joined, coun
       )}
     </div>
   );
+}
+
+function Stat({ n, label, onClick, testId }) {
+  const inner = (
+    <>
+      <div style={{ color: "#fff", fontSize: 22, fontWeight: 700, lineHeight: 1, letterSpacing: "-0.4px" }}>{n}</div>
+      <div style={{ color: "#8E8E93", fontSize: 11, fontWeight: 500, letterSpacing: 0.3, marginTop: 4, textTransform: "uppercase" }}>{label}</div>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button data-testid={testId} onClick={onClick} style={{ background: "transparent", border: "none", padding: 0, textAlign: "left", cursor: "pointer" }}>
+        {inner}
+      </button>
+    );
+  }
+  return <div data-testid={testId}>{inner}</div>;
 }
 
 function Dot() {

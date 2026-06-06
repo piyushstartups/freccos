@@ -26,7 +26,7 @@ export default function Explore() {
 
   return (
     <div className="pb-32 fade-in" data-testid="explore-page">
-      <div style={{ background: "#1C1C1E", color: "#fff", padding: "28px 16px 22px", position: "relative", textAlign: "center" }}>
+      <div className="app-header" style={{ background: "#1C1C1E", color: "#fff", padding: "28px 16px 22px", position: "relative", textAlign: "center" }}>
         <button
           data-testid="explore-bell"
           onClick={() => nav("/notifications")}

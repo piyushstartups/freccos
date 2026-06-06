@@ -60,7 +60,7 @@ export default function TripDetail() {
   // group by category
   return (
     <div className="pb-32 fade-in" data-testid="trip-detail">
-      <div style={{ background: "#1C1C1E", color: "#fff", padding: "44px 16px 16px" }}>
+      <div className="app-header" style={{ background: "#1C1C1E", color: "#fff", padding: "44px 16px 16px" }}>
         <Link to="/trips" style={{ color: "#0A84FF", display: "inline-flex", alignItems: "center", textDecoration: "none" }}>
           <ChevronLeft size={18} /> Trip plans
         </Link>

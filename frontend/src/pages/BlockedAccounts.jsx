@@ -23,7 +23,7 @@ export default function BlockedAccounts() {
 
   return (
     <div className="pb-32 fade-in" data-testid="blocked-page">
-      <div style={{ background: "#1C1C1E", color: "#fff", padding: "32px 16px 18px" }}>
+      <div className="app-header" style={{ background: "#1C1C1E", color: "#fff", padding: "32px 16px 18px" }}>
         <button onClick={() => nav(-1)} style={{ background: "transparent", border: "none", color: "#0A84FF", display: "inline-flex", alignItems: "center" }}>
           <ChevronLeft size={18} /> Back
         </button>

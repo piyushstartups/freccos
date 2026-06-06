@@ -3,7 +3,7 @@ import api from "../lib/api";
 import BottomSheet from "./BottomSheet";
 import Avatar from "./Avatar";
 import { CategoryChip } from "./CategoryChip";
-import { Star, MapPin, ExternalLink, Share2, Bookmark, BookmarkCheck } from "lucide-react";
+import { MapPin, ExternalLink, Share2, Bookmark, BookmarkCheck } from "lucide-react";
 import { toast } from "sonner";
 import { formatMonthYear, photoUrl } from "../lib/utils-frec";
 
@@ -18,14 +18,13 @@ export default function PlaceSheet({ open, onClose, group, cityId, onChange }) {
     if (!open || !group) { setDetails(null); setAllContribs(null); return; }
     setSaved(!!group.is_saved);
     setSaveCount(0);
-    // Pull friend recs (full)
     api.get("/places/recommendations", {
       params: { place_id: group.place_id, place_name: group.place_name, city_id: cityId },
     }).then(({ data }) => {
       setAllContribs(data.contributors || group.contributors);
       setSaveCount(data.save_count || 0);
     }).catch(() => setAllContribs(group.contributors));
-    // Pull Google quick facts (best-effort)
+    // Quietly fetch place details only to obtain the cover photo + google_maps_uri.
     if (group.place_id) {
       api.get(`/places/details/${group.place_id}`)
         .then(({ data }) => setDetails(data))
@@ -65,17 +64,9 @@ export default function PlaceSheet({ open, onClose, group, cityId, onChange }) {
     } catch { /* user cancelled or clipboard unavailable */ }
   };
 
-  const openInMaps = () => {
-    const url = details?.google_maps_uri
-      || (group.place_id ? `https://www.google.com/maps/place/?q=place_id:${group.place_id}`
-      : `https://www.google.com/maps/search/${encodeURIComponent(group.place_name)}`);
-    window.open(url, "_blank");
-  };
-
-  const priceLevelLabel = (lvl) => {
-    const map = { PRICE_LEVEL_INEXPENSIVE: "₹", PRICE_LEVEL_MODERATE: "₹₹", PRICE_LEVEL_EXPENSIVE: "₹₹₹", PRICE_LEVEL_VERY_EXPENSIVE: "₹₹₹₹" };
-    return map[lvl] || (typeof lvl === "number" ? "₹".repeat(Math.max(1, Math.min(4, lvl))) : null);
-  };
+  const mapsUrl = details?.google_maps_uri
+    || (group.place_id ? `https://www.google.com/maps/place/?q=place_id:${group.place_id}`
+    : `https://www.google.com/maps/search/${encodeURIComponent(group.place_name)}`);
 
   const cover = coverPhoto ? photoUrl(coverPhoto) : googlePhotoUrl;
 
@@ -106,42 +97,14 @@ export default function PlaceSheet({ open, onClose, group, cityId, onChange }) {
 
         <div className="px-4 pt-4">
           <div className="flex items-start justify-between gap-3">
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <h2 className="t-title1">{group.place_name}</h2>
-              {details && (details.rating || details.price_level || typeof details.open_now === "boolean") && (
-                <div className="t-cap muted mt-1 flex items-center gap-2 flex-wrap">
-                  {details.rating && (
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
-                      <Star size={12} fill="#FF9F0A" stroke="#FF9F0A" /> {details.rating.toFixed(1)}
-                    </span>
-                  )}
-                  {priceLevelLabel(details.price_level) && <span>· {priceLevelLabel(details.price_level)}</span>}
-                  {typeof details.open_now === "boolean" && (
-                    <span style={{ color: details.open_now ? "#1B7C2D" : "#8E8E93" }}>
-                      · {details.open_now ? "Open now" : "Closed"}
-                    </span>
-                  )}
-                </div>
-              )}
             </div>
-            <div className="flex gap-1">
-              <button onClick={share} aria-label="Share" data-testid="place-share"
-                style={{ background: "rgba(120,120,128,0.12)", border: "none", borderRadius: 9999, padding: 8, color: "#1C1C1E" }}>
-                <Share2 size={16} />
-              </button>
-            </div>
-          </div>
-
-          {(group.place_id || details?.google_maps_uri) && (
-            <button
-              data-testid="place-maps"
-              onClick={openInMaps}
-              className="btn-pill mt-3"
-              style={{ background: "#fff", color: "#0A84FF", border: "1px solid #0A84FF", padding: "8px 14px", fontSize: 13 }}
-            >
-              <ExternalLink size={14} /> Open in Google Maps
+            <button onClick={share} aria-label="Share" data-testid="place-share"
+              style={{ background: "rgba(120,120,128,0.12)", border: "none", borderRadius: 9999, padding: 8, color: "#1C1C1E", flexShrink: 0 }}>
+              <Share2 size={16} />
             </button>
-          )}
+          </div>
 
           <div className="divider mt-4" />
 
@@ -152,7 +115,7 @@ export default function PlaceSheet({ open, onClose, group, cityId, onChange }) {
                 <div key={c.id || c.rec_id || c.user?.id} className="ios-card" style={{ padding: "12px 14px" }} data-testid="place-contributor">
                   <div className="flex items-center gap-2">
                     {c.user ? <Avatar user={c.user} size={28} /> : <Avatar user={c} size={28} />}
-                    <div style={{ flex: 1 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="t-sub"><strong>{c.user?.name || c.name}</strong></div>
                       {c.created_at && <div className="t-cap muted">{formatMonthYear(c.created_at)}</div>}
                     </div>
@@ -170,6 +133,21 @@ export default function PlaceSheet({ open, onClose, group, cityId, onChange }) {
               ))}
             </div>
           </div>
+
+          {/* Open in Google Maps — subtle text link below contributors */}
+          <a
+            href={mapsUrl}
+            target="_blank"
+            rel="noreferrer"
+            data-testid="place-maps"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              marginTop: 16, fontSize: 13, color: "#0A84FF",
+              textDecoration: "none",
+            }}
+          >
+            Open in Google Maps <ExternalLink size={13} />
+          </a>
 
           <div className="mt-3 t-cap muted">
             Saved by {saveCount} {saveCount === 1 ? "person" : "people"} on Freccos

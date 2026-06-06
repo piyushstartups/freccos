@@ -61,13 +61,15 @@ export default function People() {
   };
 
   // Filter the active tab's list. Search bar applies to all tabs.
+  // Discovery never shows yourself or people you already follow (or have a pending request to).
   const baseList = tab === "all" ? all : (discover[tab] || []);
   const lowerQ = q.toLowerCase();
-  const list = q ? baseList.filter((u) => u.name?.toLowerCase().includes(lowerQ)) : baseList;
+  const list = (q ? baseList.filter((u) => u.name?.toLowerCase().includes(lowerQ)) : baseList)
+    .filter((u) => u.id !== user?.id && !u.is_following);
 
   return (
     <div className="pb-32 fade-in" data-testid="people-page">
-      <div style={{ background: "#1C1C1E", color: "#fff", padding: "28px 16px 18px" }}>
+      <div className="app-header" style={{ background: "#1C1C1E", color: "#fff", padding: "28px 16px 18px" }}>
         <h1 style={{ color: "#fff", fontSize: 28, fontWeight: 700, letterSpacing: "-0.4px", lineHeight: 1.15, margin: 0 }}>People</h1>
         <p style={{ color: "#8E8E93", fontSize: 14, lineHeight: 1.3, margin: "6px 0 0" }}>Discover travellers worth following.</p>
       </div>

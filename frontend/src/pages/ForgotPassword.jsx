@@ -20,7 +20,7 @@ export default function ForgotPassword() {
 
   return (
     <div style={{ minHeight: "100vh" }}>
-      <div style={{ background: "#1C1C1E", color: "#fff", padding: "28px 16px 22px" }}>
+      <div className="app-header" style={{ background: "#1C1C1E", color: "#fff", padding: "28px 16px 22px" }}>
         <h1 style={{ color: "#fff", fontSize: 28, fontWeight: 700, letterSpacing: "-0.4px", lineHeight: 1.15, margin: 0 }}>Reset password</h1>
       </div>
       <form onSubmit={submit} className="p-4">

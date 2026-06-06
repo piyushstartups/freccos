@@ -10,6 +10,7 @@ import React from "react";
 export default function PageHeader({ title, subtitle, left, right, children, padTop = 28 }) {
   return (
     <div
+      className="app-header"
       style={{
         background: "#1C1C1E",
         color: "#fff",

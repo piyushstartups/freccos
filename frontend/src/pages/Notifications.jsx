@@ -52,7 +52,7 @@ export default function Notifications() {
 
   return (
     <div className="pb-32 fade-in" data-testid="notifications-page">
-      <div style={{ background: "#1C1C1E", color: "#fff", padding: "20px 16px 18px" }}>
+      <div className="app-header" style={{ background: "#1C1C1E", color: "#fff", padding: "20px 16px 18px" }}>
         <button onClick={() => nav(-1)} style={{ background: "transparent", border: "none", color: "#0A84FF", display: "inline-flex", alignItems: "center", padding: 0, marginBottom: 8, fontSize: 15 }}>
           <ChevronLeft size={20} /> Back
         </button>
