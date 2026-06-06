@@ -842,7 +842,10 @@ async def get_user_profile(user_id: str, user: dict = Depends(current_user)):
 
     # Full payload: union of rec-cities and explicit trips
     rec_ids_by_city: dict = {}
-    async for r in db.recommendations.find({"user_id": user_id}, {"_id": 0}).limit(2000):
+    async for r in db.recommendations.find(
+        {"user_id": user_id},
+        {"_id": 0, "city_id": 1, "photo_url": 1},
+    ).limit(2000):
         rec_ids_by_city.setdefault(r["city_id"], []).append(r)
     trip_city_ids = set()
     async for t in db.user_trips.find({"user_id": user_id}, {"_id": 0, "city_id": 1}).limit(500):
