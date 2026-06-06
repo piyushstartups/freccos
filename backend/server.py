@@ -248,6 +248,33 @@ app = FastAPI(title="Freccos API")
 api = APIRouter(prefix="/api")
 
 
+async def _dedup_pair(collection_name: str, key1: str, key2: str):
+    """Remove duplicate rows that share the same (key1, key2) pair, keeping the
+    most recently inserted document. Used at startup to safely apply a unique
+    index without crashing on pre-existing dirty data.
+    Idempotent: a no-op once data is clean."""
+    coll = db[collection_name]
+    cursor = coll.aggregate([
+        {"$group": {
+            "_id": {"k1": f"${key1}", "k2": f"${key2}"},
+            "ids": {"$push": "$_id"},
+            "count": {"$sum": 1},
+        }},
+        {"$match": {"count": {"$gt": 1}}},
+    ])
+    removed = 0
+    async for grp in cursor:
+        # keep the last inserted document; delete the others
+        ids = grp["ids"]
+        if len(ids) <= 1:
+            continue
+        to_delete = ids[:-1]
+        res = await coll.delete_many({"_id": {"$in": to_delete}})
+        removed += res.deleted_count
+    if removed:
+        print(f"[startup] de-duplicated {removed} rows from {collection_name} ({key1}, {key2})")
+
+
 @app.on_event("startup")
 async def startup():
     # Indexes
@@ -260,10 +287,15 @@ async def startup():
     await db.recommendations.create_index([("user_id", 1), ("city_id", 1)])
     await db.recommendations.create_index([("city_id", 1)])
     await db.follows.create_index([("follower_id", 1), ("following_id", 1)], unique=True)
+    # Dedup before unique index — guards against pre-existing duplicate rows
+    # that would otherwise crash the backend at startup.
+    await _dedup_pair("trip_plans", "user_id", "city_id")
     await db.trip_plans.create_index([("user_id", 1), ("city_id", 1)], unique=True)
+    await _dedup_pair("user_trips", "user_id", "city_id")
     await db.user_trips.create_index([("user_id", 1), ("city_id", 1)], unique=True)
     await db.user_sessions.create_index("session_token")
     await db.password_reset_tokens.create_index("expires_at", expireAfterSeconds=0)
+    await _dedup_pair("follow_requests", "requester_id", "target_id")
     await db.follow_requests.create_index([("requester_id", 1), ("target_id", 1)], unique=True)
     await db.follow_requests.create_index("target_id")
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
