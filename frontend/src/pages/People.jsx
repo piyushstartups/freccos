@@ -5,6 +5,7 @@ import Avatar from "../components/Avatar";
 import { useAuth } from "../lib/auth";
 import { Search, UserPlus, UserCheck, Clock, Share2 } from "lucide-react";
 import { toast } from "sonner";
+import { track, Events } from "../lib/analytics";
 
 const TABS = [
   { id: "all", label: "All" },
@@ -46,8 +47,14 @@ export default function People() {
         toast("Request cancelled");
       } else {
         const { data } = await api.post(`/users/${u.id}/follow`);
-        if (data.status === "requested") toast.success(`Follow request sent to ${u.name}`);
-        else toast.success(`Now following ${u.name}`);
+        if (data.status === "requested") {
+          toast.success(`Follow request sent to ${u.name}`);
+          track(Events.FOLLOW_TAPPED, { target_user_id: u.id, profile_type: "private" });
+          track(Events.FOLLOW_REQUEST_SENT, { target_user_id: u.id });
+        } else {
+          toast.success(`Now following ${u.name}`);
+          track(Events.FOLLOW_TAPPED, { target_user_id: u.id, profile_type: "public" });
+        }
       }
       // Refresh both views so state is consistent everywhere
       await Promise.all([loadAll(), loadDiscover()]);
@@ -56,6 +63,7 @@ export default function People() {
 
   const shareInvite = async () => {
     const text = `Join me on Freccos! Use my invite code: ${user?.invite_code} https://freccos.com`;
+    track(Events.INVITE_CODE_SHARED, { surface: "people_tab" });
     if (navigator.share) { try { await navigator.share({ text }); } catch { /* cancelled */ } }
     else { try { await navigator.clipboard.writeText(text); toast.success("Invite copied"); } catch { toast("Copy failed"); } }
   };

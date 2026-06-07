@@ -4,6 +4,7 @@ import api from "../lib/api";
 import { CATEGORIES } from "../lib/utils-frec";
 import { Camera, Loader2, Check } from "lucide-react";
 import { toast } from "sonner";
+import { track, Events } from "../lib/analytics";
 
 export default function AddRecommendationSheet({ open, onClose, lockedCity, onCreated, editingRec }) {
   const isEdit = !!editingRec;
@@ -120,6 +121,13 @@ export default function AddRecommendationSheet({ open, onClose, lockedCity, onCr
           payload.country_code = countryCode || undefined;
         }
         const { data } = await api.post("/recommendations", payload);
+        track(Events.RECOMMENDATION_ADDED, {
+          city_name: lockedCity?.name || cityName.trim(),
+          country: lockedCity?.country || country || null,
+          category,
+          has_photo: !!photoPath,
+          has_note: !!(note && note.trim()),
+        });
         toast.success("Recommendation added!");
         onCreated?.(data);
         onClose?.();

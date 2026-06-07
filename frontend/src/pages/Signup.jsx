@@ -1,16 +1,17 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api, { formatApiErrorDetail } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import Wordmark from "../components/Wordmark";
 import { Check, Loader2, Camera, ArrowLeft } from "lucide-react";
+import { track, Events } from "../lib/analytics";
 
 export default function Signup() {
   const nav = useNavigate();
   const { register, setUser } = useAuth();
   const [step, setStep] = useState(1);
   const [code, setCode] = useState("");
-  const [codeStatus, setCodeStatus] = useState(null); // {valid, referrer_name}
+  const [codeStatus, setCodeStatus] = useState(null);
   const [validating, setValidating] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -22,6 +23,8 @@ export default function Signup() {
   const [photoPreview, setPhotoPreview] = useState(null);
   const [bio, setBio] = useState("");
   const fileRef = useRef(null);
+
+  useEffect(() => { track(Events.SIGNUP_STARTED); }, []);
 
   const validate = async () => {
     if (!code) return;
@@ -53,8 +56,10 @@ export default function Signup() {
     setErr(""); setBusy(true);
     try {
       const payload = { name, email: email.trim(), password: pw };
-      if (code && codeStatus?.valid) payload.invite_code = code;
+      const inviteUsed = !!(code && codeStatus?.valid);
+      if (inviteUsed) payload.invite_code = code;
       await register(payload);
+      track(Events.SIGNUP_COMPLETED, { invite_code_used: inviteUsed });
       setStep(3);
     } catch (e) {
       setErr(formatApiErrorDetail(e.response?.data?.detail) || e.message);

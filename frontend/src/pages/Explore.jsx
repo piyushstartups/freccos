@@ -4,6 +4,7 @@ import api from "../lib/api";
 import StackedAvatars from "../components/StackedAvatars";
 import Wordmark from "../components/Wordmark";
 import { Search, Bell } from "lucide-react";
+import { track, Events } from "../lib/analytics";
 
 export default function Explore() {
   const [cities, setCities] = useState(null);
@@ -93,6 +94,7 @@ export default function Explore() {
                   key={c.id}
                   to={`/city/${c.id}`}
                   data-testid={`city-card-${c.id}`}
+                  onClick={() => track(Events.CITY_EXPLORED, { city_name: c.name, country: c.country })}
                   className="ios-card"
                   style={{
                     padding: "14px 14px 12px",

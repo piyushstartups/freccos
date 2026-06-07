@@ -5,6 +5,7 @@ import { formatApiErrorDetail } from "../lib/api";
 import { FreccosLogo } from "./Splash";
 import Wordmark from "../components/Wordmark";
 import { Loader2 } from "lucide-react";
+import { track, Events } from "../lib/analytics";
 
 export default function Login() {
   const { login } = useAuth();
@@ -20,6 +21,7 @@ export default function Login() {
     setLoading(true);
     try {
       await login(email.trim(), pw);
+      track(Events.LOGIN_COMPLETED, { method: "password" });
       nav("/explore", { replace: true });
     } catch (e) {
       setErr(formatApiErrorDetail(e.response?.data?.detail) || e.message);

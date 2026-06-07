@@ -1,8 +1,9 @@
 import React, { useEffect } from "react";
 import "./index.css";
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, matchPath } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./lib/auth";
+import { track, identify, Events } from "./lib/analytics";
 import Splash from "./pages/Splash";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -32,6 +33,40 @@ function ProtectedRoute({ children }) {
   }
   if (!user) return <Navigate to="/login" replace />;
   return children;
+}
+
+// Maps a pathname → human-readable screen name for analytics
+function screenNameFromPath(pathname) {
+  if (pathname === "/" || pathname === "/login" || pathname === "/signup" || pathname === "/forgot") return null; // pre-auth screens
+  if (pathname.startsWith("/explore")) return "Explore";
+  if (matchPath("/city/:cityId", pathname)) return "City View";
+  if (pathname === "/people") return "People";
+  if (matchPath("/user/:userId/:mode", pathname)) {
+    const m = matchPath("/user/:userId/:mode", pathname);
+    return m.params.mode === "followers" ? "Followers" : "Following";
+  }
+  if (matchPath("/user/:userId", pathname)) return "Friend Profile";
+  if (pathname === "/trips") return "Bucket List";
+  if (matchPath("/trips/:cityId", pathname)) return "Trip Plan";
+  if (pathname === "/me") return "Profile";
+  if (pathname === "/me/blocked") return "Blocked Accounts";
+  if (pathname === "/notifications") return "Notifications";
+  return null;
+}
+
+function AnalyticsObserver() {
+  const location = useLocation();
+  const { user } = useAuth();
+  // Identify on login/signup whenever user object changes
+  useEffect(() => {
+    if (user?.id) identify(user.id, { name: user.name, email: user.email });
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Fire page_viewed on every route change
+  useEffect(() => {
+    const screen = screenNameFromPath(location.pathname);
+    if (screen) track(Events.PAGE_VIEWED, { screen_name: screen, path: location.pathname });
+  }, [location.pathname]);
+  return null;
 }
 
 function AppRoutes() {
@@ -76,6 +111,7 @@ function App() {
       <BrowserRouter>
         <div className="frec-shell">
           <PWAInstallBanner />
+          <AnalyticsObserver />
           <AppRoutes />
           <Toaster position="top-center" closeButton richColors />
         </div>

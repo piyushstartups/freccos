@@ -4,6 +4,7 @@ import api from "../lib/api";
 import { useAuth } from "../lib/auth";
 import Avatar from "../components/Avatar";
 import PlaceSheet from "../components/PlaceSheet";
+import { track, Events } from "../lib/analytics";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
 import {
   ChevronLeft, UserCheck, UserPlus, MessageCircle,
@@ -102,8 +103,14 @@ export default function FriendProfile() {
         await api.post(`/users/${userId}/unfollow`);
       } else {
         const { data } = await api.post(`/users/${userId}/follow`);
-        if (data.status === "requested") toast.success("Follow request sent");
-        else toast.success(`Now following ${profile.name}`);
+        if (data.status === "requested") {
+          toast.success("Follow request sent");
+          track(Events.FOLLOW_TAPPED, { target_user_id: userId, profile_type: "private" });
+          track(Events.FOLLOW_REQUEST_SENT, { target_user_id: userId });
+        } else {
+          toast.success(`Now following ${profile.name}`);
+          track(Events.FOLLOW_TAPPED, { target_user_id: userId, profile_type: "public" });
+        }
       }
       load();
     } catch { toast.error("Couldn't update follow"); }

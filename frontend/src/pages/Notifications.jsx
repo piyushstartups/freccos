@@ -4,6 +4,7 @@ import api from "../lib/api";
 import Avatar from "../components/Avatar";
 import { ChevronLeft, Check, X } from "lucide-react";
 import { toast } from "sonner";
+import { track, Events } from "../lib/analytics";
 
 function timeAgo(iso) {
   if (!iso) return "";
@@ -37,8 +38,12 @@ export default function Notifications() {
   useEffect(() => { load(); }, []);
 
   const accept = async (req) => {
-    try { await api.post(`/users/me/follow-requests/${req.id}/accept`); toast.success(`${req.requester?.name} is now following you`); load(); }
-    catch { toast.error("Couldn't accept"); }
+    try {
+      await api.post(`/users/me/follow-requests/${req.id}/accept`);
+      track(Events.FOLLOW_REQUEST_ACCEPTED, { requester_id: req.requester?.id });
+      toast.success(`${req.requester?.name} is now following you`);
+      load();
+    } catch { toast.error("Couldn't accept"); }
   };
   const decline = async (req) => {
     try { await api.post(`/users/me/follow-requests/${req.id}/decline`); load(); }

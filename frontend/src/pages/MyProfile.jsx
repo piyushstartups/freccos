@@ -8,6 +8,7 @@ import AddRecommendationSheet from "../components/AddRecommendationSheet";
 import AddTripSheet from "../components/AddTripSheet";
 import ConfirmDialog from "../components/ConfirmDialog";
 import PlaceSheet from "../components/PlaceSheet";
+import { track, Events } from "../lib/analytics";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
 import { flagForCountry } from "../lib/flags";
 import {
@@ -80,6 +81,7 @@ export default function MyProfile() {
 
   const shareInvite = async () => {
     const text = `Join me on Freccos! Use my invite code: ${user.invite_code} https://freccos.com`;
+    track(Events.INVITE_CODE_SHARED, { surface: "profile" });
     if (navigator.share) try { await navigator.share({ text }); } catch { /* user cancelled */ }
     else try { await navigator.clipboard.writeText(text); toast.success("Invite copied"); } catch { toast("Copy failed"); }
   };

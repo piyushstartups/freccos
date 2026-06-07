@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import BottomSheet from "./BottomSheet";
 import api from "../lib/api";
+import { track, Events } from "../lib/analytics";
 import { Bookmark, Loader2, Check } from "lucide-react";
 import { toast } from "sonner";
 
@@ -53,6 +54,8 @@ export default function AddBucketListSheet({ open, onClose, onAdded }) {
         country: selected?.country,
         country_code: selected?.country_code,
       });
+      track(Events.BUCKET_LIST_CITY_ADDED, { city_name: data.city?.name || cityName, country: selected?.country || null });
+      track(Events.TRIP_PLAN_CREATED, { city_name: data.city?.name || cityName, country: selected?.country || null });
       toast.success(`Added ${data.city?.name || cityName} to your bucket list`);
       onAdded?.(data);
       onClose?.();

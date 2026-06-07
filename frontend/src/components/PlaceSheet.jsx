@@ -7,6 +7,7 @@ import { CategoryChip } from "./CategoryChip";
 import { MapPin, ExternalLink, Share2, Bookmark, BookmarkCheck, X, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { formatMonthYear, photoUrl } from "../lib/utils-frec";
+import { track, Events } from "../lib/analytics";
 
 export default function PlaceSheet({ open, onClose, group, cityId, onChange, onEdit }) {
   const { user: me } = useAuth();
@@ -18,6 +19,11 @@ export default function PlaceSheet({ open, onClose, group, cityId, onChange, onE
 
   useEffect(() => {
     if (!open || !group) { setDetails(null); setAllContribs(null); return; }
+    track(Events.PLACE_CARD_OPENED, {
+      place_name: group.place_name,
+      city_id: cityId,
+      category: group.category,
+    });
     setSaved(!!group.is_saved);
     setSaveCount(0);
     api.get("/places/recommendations", {
@@ -56,6 +62,11 @@ export default function PlaceSheet({ open, onClose, group, cityId, onChange, onE
         setSaved(true);
         setBump(true); setTimeout(() => setBump(false), 320);
         toast.success("Saved to trip plan");
+        track(Events.RECOMMENDATION_SAVED, {
+          place_name: group.place_name,
+          city_id: cityId,
+          saved_from_user_id: contribs[0]?.user?.id || contribs[0]?.id,
+        });
       }
       onChange?.();
     } catch (e) { toast.error(e?.response?.data?.detail || "Couldn't update"); }
