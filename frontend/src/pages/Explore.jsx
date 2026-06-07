@@ -60,7 +60,7 @@ export default function Explore() {
           <Wordmark size={44} color="#fff" />
         </div>
         <p style={{ color: "#8E8E93", fontSize: 13, marginTop: 10, letterSpacing: 0.2 }}>
-          Real places. Recommended by people you trust.
+          Discover the world through your people.
         </p>
       </div>
 

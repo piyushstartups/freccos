@@ -4,10 +4,11 @@ import api from "../lib/api";
 import { useAuth } from "../lib/auth";
 import Avatar from "../components/Avatar";
 import PlaceSheet from "../components/PlaceSheet";
+import Wordmark from "../components/Wordmark";
 import { track, Events } from "../lib/analytics";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
 import {
-  ChevronLeft, UserCheck, UserPlus, MessageCircle,
+  ChevronLeft, ChevronRight, UserCheck, UserPlus, MessageCircle,
   Instagram, MoreHorizontal, ShieldOff, Clock,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -155,6 +156,10 @@ export default function FriendProfile() {
   return (
     <div className="pb-32 fade-in" data-testid="friend-profile">
       <div className="app-header" style={{ background: "#1C1C1E", color: "#fff", padding: "20px 16px 18px", position: "relative" }}>
+        {/* Subtle Freccos wordmark — top centre */}
+        <div style={{ position: "absolute", top: "calc(var(--safe-area-top) - 24px)", left: 0, right: 0, textAlign: "center", pointerEvents: "none" }}>
+          <Wordmark size={18} color="rgba(255,255,255,0.4)" weight={500} />
+        </div>
         <button onClick={() => nav(-1)} style={{ color: "#0A84FF", display: "inline-flex", alignItems: "center", background: "transparent", border: "none", padding: 0, fontSize: 15 }}>
           <ChevronLeft size={20} /> Back
         </button>
@@ -286,18 +291,45 @@ export default function FriendProfile() {
         Object.keys(byCountry).length === 0 ? (
           <div className="px-6 mt-8"><p className="t-sub muted">{profile.name} hasn&apos;t added any places yet — maybe nudge them!</p></div>
         ) : Object.entries(byCountry).map(([country, cities]) => (
-          <div key={country}>
-            <div className="section-header">{flagForCountry(country)} {country}</div>
-            <div className="ios-card mx-4" style={{ overflow: "hidden" }}>
+          <div key={country} style={{ marginTop: 28 }}>
+            <div className="px-4" style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+              <h3 style={{ fontSize: 19, fontWeight: 700, color: "#1C1C1E", letterSpacing: "-0.2px", margin: 0 }}>
+                <span style={{ fontSize: 22, marginRight: 6 }}>{flagForCountry(country)}</span>
+                {country}
+              </h3>
+              <span className="t-cap muted" style={{ fontSize: 12 }}>
+                {cities.length} {cities.length === 1 ? "city" : "cities"}
+              </span>
+            </div>
+            <div className="mx-4" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {cities.map((c) => (
-                <button key={c.id} data-testid={`friend-city-${c.id}`} className="list-row w-full text-left"
-                  onClick={() => setOpenCity(c.id)} style={{ background: "transparent", border: "none" }}>
-                  <span style={{ fontSize: 22 }}>{c.flag_emoji}</span>
-                  <div style={{ flex: 1 }}>
-                    <div className="t-title3">{c.name}</div>
-                    <div className="t-cap muted">{c.rec_count} recommendation{c.rec_count === 1 ? "" : "s"}</div>
+                <button
+                  key={c.id}
+                  data-testid={`friend-city-${c.id}`}
+                  onClick={() => setOpenCity(c.id)}
+                  className="ios-card w-full text-left"
+                  style={{
+                    background: "#fff", border: "none",
+                    padding: "14px 16px",
+                    display: "flex", gap: 14, alignItems: "center",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+                  }}
+                >
+                  <div style={{
+                    width: 52, height: 52, borderRadius: 12,
+                    background: "#F2F2F7",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 28, flexShrink: 0,
+                  }}>
+                    {c.flag_emoji}
                   </div>
-                  <span className="muted">›</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="t-title3" style={{ fontSize: 16 }}>{c.name}</div>
+                    <div className="t-cap muted" style={{ marginTop: 2 }}>
+                      {c.rec_count} recommendation{c.rec_count === 1 ? "" : "s"}
+                    </div>
+                  </div>
+                  <ChevronRight size={18} color="#C7C7CC" style={{ flexShrink: 0 }} />
                 </button>
               ))}
             </div>

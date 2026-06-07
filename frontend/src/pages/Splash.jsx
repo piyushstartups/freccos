@@ -27,7 +27,7 @@ export default function Splash() {
       <div style={{ marginTop: 22 }}>
         <Wordmark size={38} color="#fff" />
       </div>
-      <p className="t-sub mt-3" style={{ color: "#8E8E93" }}>The places your friends actually love.</p>
+      <p className="t-sub mt-3" style={{ color: "#8E8E93" }}>Discover the world through your people.</p>
     </div>
   );
 }

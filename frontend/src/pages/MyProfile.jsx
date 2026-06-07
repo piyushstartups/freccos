@@ -8,11 +8,12 @@ import AddRecommendationSheet from "../components/AddRecommendationSheet";
 import AddTripSheet from "../components/AddTripSheet";
 import ConfirmDialog from "../components/ConfirmDialog";
 import PlaceSheet from "../components/PlaceSheet";
+import Wordmark from "../components/Wordmark";
 import { track, Events } from "../lib/analytics";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
 import { flagForCountry } from "../lib/flags";
 import {
-  Settings, Share2, LogOut, Pencil, Trash2, ChevronLeft, Plus, Map, MoreHorizontal,
+  Settings, Share2, LogOut, Pencil, Trash2, ChevronLeft, ChevronRight, Plus, Map, MoreHorizontal,
   Download, Instagram, Shield, Lock,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -191,35 +192,74 @@ export default function MyProfile() {
           )}
 
           {allCities.length > 0 && Object.entries(byCountry).map(([country, cities]) => (
-            <div key={country}>
-              <div className="section-header">
-                {flagForCountry(country)} {country} <span className="tertiary">· {cities.length} {cities.length === 1 ? "city" : "cities"}</span>
+            <div key={country} style={{ marginTop: 28 }}>
+              <div className="px-4" style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+                <h3 style={{ fontSize: 19, fontWeight: 700, color: "#1C1C1E", letterSpacing: "-0.2px", margin: 0 }}>
+                  <span style={{ fontSize: 22, marginRight: 6 }}>{flagForCountry(country)}</span>
+                  {country}
+                </h3>
+                <span className="t-cap muted" style={{ fontSize: 12 }}>
+                  {cities.length} {cities.length === 1 ? "city" : "cities"}
+                </span>
               </div>
-              <div className="mx-4 space-y-2">
-                {cities.map((c) => (
-                  <button
-                    key={c.id}
-                    data-testid={`me-city-${c.id}`}
-                    onClick={() => setOpenCityId(c.id)}
-                    className="ios-card w-full text-left"
-                    style={{ background: "#fff", border: "none", padding: 12, display: "flex", gap: 12, alignItems: "center" }}
-                  >
-                    {(c.photos && c.photos.length > 0) ? (
-                      <PhotoCollage photos={c.photos} />
-                    ) : (
-                      <div style={{ width: 64, height: 64, borderRadius: 10, background: "#F2F2F7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>
+              <div className="mx-4" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {cities.map((c) => {
+                  const hasPhotos = c.photos && c.photos.length > 0;
+                  return (
+                    <button
+                      key={c.id}
+                      data-testid={`me-city-${c.id}`}
+                      onClick={() => setOpenCityId(c.id)}
+                      className="ios-card w-full text-left"
+                      style={{
+                        background: "#fff", border: "none",
+                        padding: "14px 16px",
+                        display: "flex", gap: 14, alignItems: "center",
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+                      }}
+                    >
+                      {/* iOS-app-icon style flag tile */}
+                      <div style={{
+                        width: 52, height: 52, borderRadius: 12,
+                        background: "#F2F2F7",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 28, flexShrink: 0,
+                      }}>
                         {c.flag_emoji}
                       </div>
-                    )}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="t-title3">{c.name}</div>
-                      <div className="t-cap muted">
-                        {c.rec_count > 0 ? `${c.rec_count} recommendation${c.rec_count === 1 ? "" : "s"}` : "No recommendations yet"}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="t-title3" style={{ fontSize: 16 }}>{c.name}</div>
+                        {c.rec_count > 0 ? (
+                          <div className="t-cap muted" style={{ marginTop: 2 }}>
+                            {c.rec_count} recommendation{c.rec_count === 1 ? "" : "s"}
+                          </div>
+                        ) : (
+                          <div className="t-cap" style={{ marginTop: 2, color: "#0A84FF", fontWeight: 500 }}>
+                            + Add recs
+                          </div>
+                        )}
                       </div>
-                    </div>
-                    <span className="muted">›</span>
-                  </button>
-                ))}
+                      {/* Photo peek stack (if available) */}
+                      {hasPhotos && (
+                        <div style={{ display: "flex", marginRight: 8, flexShrink: 0 }}>
+                          {c.photos.slice(0, 3).map((p, i) => (
+                            <div
+                              key={i}
+                              style={{
+                                width: 36, height: 36, borderRadius: 8,
+                                background: `#eee url('${photoUrl(p)}') center/cover`,
+                                border: "2px solid #fff",
+                                marginLeft: i === 0 ? 0 : -10,
+                                boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+                              }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      <ChevronRight size={18} color="#C7C7CC" style={{ flexShrink: 0 }} />
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -414,6 +454,10 @@ function ProfileHero({ profile, cityCount, countryCount, countries, joined, coun
   const following = profile.following_count || 0;
   return (
     <div className="app-header" style={{ background: "#1C1C1E", color: "#fff", padding: "28px 16px 18px", position: "relative" }} data-testid="profile-hero">
+      {/* Subtle Freccos wordmark — top centre */}
+      <div style={{ position: "absolute", top: "calc(var(--safe-area-top) - 24px)", left: 0, right: 0, textAlign: "center", pointerEvents: "none" }}>
+        <Wordmark size={18} color="rgba(255,255,255,0.4)" weight={500} />
+      </div>
       {/* Settings gear, top-right */}
       <button
         data-testid="settings-btn"

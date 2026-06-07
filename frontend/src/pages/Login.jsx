@@ -46,7 +46,7 @@ export default function Login() {
         <div style={{ marginTop: 22 }}>
           <Wordmark size={38} color="#fff" />
         </div>
-        <p className="t-sub mt-2" style={{ color: "#8E8E93" }}>The places your friends actually love.</p>
+        <p className="t-sub mt-2" style={{ color: "#8E8E93" }}>Discover the world through your people.</p>
       </div>
       <form onSubmit={submit} style={{ padding: "28px 16px", flex: 1 }}>
         <h2 className="t-title1 mb-4">Welcome back</h2>
