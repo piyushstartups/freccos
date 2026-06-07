@@ -79,14 +79,25 @@ export default function BottomSheet({ open, onClose, title, children, testId = "
 
   if (!open) return null;
 
-  const panelStyle = {
-    transform: `translate(-50%, ${offset}px)`,
-    transition: dragging.current ? "none" : "transform 240ms cubic-bezier(0.2, 0.9, 0.3, 1.1)",
-    touchAction: "pan-y",
-  };
+  // Only apply inline transform while actively dragging or after release.
+  // When offset === 0 and the user isn't dragging, let the CSS `sheetUp`
+  // keyframe + `fadeIn` backdrop animation play unobstructed — otherwise
+  // an inline transform of 0 overrides the keyframe and the sheet appears
+  // abruptly instead of springing up.
+  const interactive = dragging.current || offset !== 0;
+  const panelStyle = interactive
+    ? {
+        transform: `translate(-50%, ${offset}px)`,
+        transition: dragging.current ? "none" : "transform 240ms cubic-bezier(0.2, 0.9, 0.3, 1.1)",
+        animation: "none",
+        touchAction: "pan-y",
+      }
+    : { touchAction: "pan-y" };
 
-  // Backdrop fades as the user drags down
-  const backdropOpacity = Math.max(0.05, 0.4 - offset / 800);
+  // Backdrop fades as the user drags down (only after first interaction)
+  const backdropStyle = interactive
+    ? { background: `rgba(0,0,0,${Math.max(0.05, 0.4 - offset / 800)})`, animation: "none" }
+    : {};
 
   return (
     <>
@@ -94,7 +105,7 @@ export default function BottomSheet({ open, onClose, title, children, testId = "
         className="sheet-backdrop"
         onClick={onClose}
         data-testid={`${testId}-backdrop`}
-        style={{ background: `rgba(0,0,0,${backdropOpacity})` }}
+        style={backdropStyle}
       />
       <div
         ref={panelRef}

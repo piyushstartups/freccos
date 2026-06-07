@@ -21,6 +21,7 @@ import PWAInstallBanner from "./components/PWAInstallBanner";
 import Notifications from "./pages/Notifications";
 import FollowList from "./pages/FollowList";
 import BlockedAccounts from "./pages/BlockedAccounts";
+import LegalPage from "./pages/LegalPage";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -80,6 +81,8 @@ function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/forgot" element={<ForgotPassword />} />
+      <Route path="/privacy" element={<LegalPage title="Privacy Policy" testId="privacy-page" />} />
+      <Route path="/terms" element={<LegalPage title="Terms of Service" testId="terms-page" />} />
       <Route element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
         <Route path="/explore" element={<Explore />} />
         <Route path="/city/:cityId" element={<CityDetail />} />

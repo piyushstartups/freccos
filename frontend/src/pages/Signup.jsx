@@ -193,6 +193,21 @@ export default function Signup() {
             {busy ? <Loader2 size={18} className="animate-spin" /> : null}
             Create account
           </button>
+          <p
+            className="t-cap muted text-center"
+            style={{ marginTop: 14, lineHeight: 1.5 }}
+            data-testid="signup-legal"
+          >
+            By signing up you agree to our{" "}
+            <Link to="/terms" style={{ color: "#0A84FF", textDecoration: "none" }} data-testid="signup-terms-link">
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link to="/privacy" style={{ color: "#0A84FF", textDecoration: "none" }} data-testid="signup-privacy-link">
+              Privacy Policy
+            </Link>
+            .
+          </p>
         </form>
       )}
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import api from "../lib/api";
 import { useAuth } from "../lib/auth";
 import Avatar from "../components/Avatar";
@@ -656,6 +656,33 @@ function SettingsSheet({ open, onClose, user, onUpdated, onLogout, onBlocked }) 
             <button data-testid="settings-logout" className="list-row w-full text-left ios-card" onClick={onLogout} style={{ border: "none", color: "#FF453A" }}>
               <LogOut size={16} /> <span style={{ flex: 1 }}>Log out</span>
             </button>
+            <div
+              style={{
+                display: "flex", justifyContent: "center", gap: 16,
+                margin: "20px 0 4px",
+              }}
+              data-testid="settings-legal"
+            >
+              <Link
+                to="/privacy"
+                onClick={onClose}
+                className="t-cap muted"
+                style={{ color: "#8E8E93", textDecoration: "none" }}
+                data-testid="settings-privacy-link"
+              >
+                Privacy policy
+              </Link>
+              <span className="t-cap muted" style={{ color: "#C7C7CC" }}>·</span>
+              <Link
+                to="/terms"
+                onClick={onClose}
+                className="t-cap muted"
+                style={{ color: "#8E8E93", textDecoration: "none" }}
+                data-testid="settings-terms-link"
+              >
+                Terms of service
+              </Link>
+            </div>
             <button
               data-testid="settings-delete"
               className="list-row w-full text-left ios-card"

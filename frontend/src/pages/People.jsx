@@ -147,17 +147,29 @@ function PersonRow({ u, onToggle }) {
     ? { background: "rgba(120,120,128,0.14)", color: "#1C1C1E" }
     : { background: "#0A84FF", color: "#fff" };
   return (
-    <div className="list-row">
-      <Link to={`/user/${u.id}`} className="flex items-center gap-3" style={{ textDecoration: "none", color: "inherit", flex: 1 }} data-testid={`user-link-${u.id}`}>
+    <div className="list-row" style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+      <Link
+        to={`/user/${u.id}`}
+        style={{ textDecoration: "none", color: "inherit", flex: "1 1 auto", minWidth: 0, display: "flex", alignItems: "center", gap: 12 }}
+        data-testid={`user-link-${u.id}`}
+      >
         <Avatar user={u} size={42} />
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: "1 1 auto", minWidth: 0 }}>
           <div className="t-title3" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.name}</div>
           {stats && <div className="t-cap muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{stats}</div>}
           {subText && <div className="t-cap" style={{ color: "#0A84FF", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{subText}</div>}
         </div>
       </Link>
-      <button data-testid={`follow-toggle-${u.id}`} onClick={onToggle} className="btn-pill"
-        style={{ padding: "6px 14px", fontSize: 13, ...btnStyle }}>
+      <button
+        data-testid={`follow-toggle-${u.id}`}
+        onClick={onToggle}
+        className="btn-pill"
+        style={{
+          padding: "6px 14px", fontSize: 13,
+          flex: "0 0 auto", whiteSpace: "nowrap",
+          ...btnStyle,
+        }}
+      >
         {btnIcon}{btnLabel}
       </button>
     </div>
