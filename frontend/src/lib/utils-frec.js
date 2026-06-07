@@ -48,6 +48,19 @@ export function formatMonthYear(iso) {
   }
 }
 
+export function formatRelativeTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 60) return "just now";
+  if (diff < 3600) { const m = Math.floor(diff / 60); return `${m} min${m === 1 ? "" : "s"} ago`; }
+  if (diff < 86400) { const h = Math.floor(diff / 3600); return `${h} hour${h === 1 ? "" : "s"} ago`; }
+  if (diff < 86400 * 2) return "Yesterday";
+  if (diff < 86400 * 7) { const dys = Math.floor(diff / 86400); return `${dys} days ago`; }
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+
 export function photoUrl(pathOrUrl) {
   if (!pathOrUrl) return null;
   if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) return pathOrUrl;

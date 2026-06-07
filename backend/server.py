@@ -1308,6 +1308,120 @@ async def get_city(city_id: str, user: dict = Depends(current_user)):
     return c
 
 
+def _normalize_place_name(name: str) -> str:
+    if not name:
+        return ""
+    return "".join(ch for ch in name.lower().strip() if ch.isalnum() or ch.isspace()).strip()
+
+
+@api.get("/feed")
+async def feed(
+    limit: int = 20,
+    before: Optional[str] = None,
+    user: dict = Depends(current_user),
+):
+    """Reverse-chronological activity feed of people the current user follows.
+
+    Returns three card types:
+      - new_rec        — a recommendation added by someone you follow
+      - new_trip       — a city someone you follow has been to
+      - top_pick       — 2+ followed users have recommended the same place
+
+    Excludes the current user's own activity. Cursor pagination via `before`
+    (ISO timestamp). Newest first.
+    """
+    following_ids = user.get("following", [])
+    if not following_ids:
+        return {"items": [], "next_cursor": None}
+
+    # Cursor — only items strictly before this timestamp
+    rec_query = {"user_id": {"$in": following_ids}}
+    trip_query = {"user_id": {"$in": following_ids}}
+    if before:
+        rec_query["created_at"] = {"$lt": before}
+        trip_query["created_at"] = {"$lt": before}
+
+    # Over-fetch a bit to allow grouping; capped to avoid runaway queries.
+    fetch_n = max(limit * 4, 60)
+    recs_raw = await db.recommendations.find(rec_query, {"_id": 0}).sort("created_at", -1).limit(fetch_n).to_list(length=fetch_n)
+    trips_raw = await db.user_trips.find(trip_query, {"_id": 0}).sort("created_at", -1).limit(fetch_n).to_list(length=fetch_n)
+
+    # Pre-load referenced user + city docs in bulk
+    user_ids_needed = list({r["user_id"] for r in recs_raw} | {t["user_id"] for t in trips_raw})
+    city_ids_needed = list({r["city_id"] for r in recs_raw} | {t["city_id"] for t in trips_raw})
+    users_by_id = {u["id"]: u async for u in db.users.find({"id": {"$in": user_ids_needed}}, {"_id": 0, "password_hash": 0})}
+    cities_by_id = {c["id"]: c async for c in db.cities.find({"id": {"$in": city_ids_needed}}, {"_id": 0})}
+
+    # Group recs by place (place_id preferred, fall back to normalised name + city)
+    groups: dict = {}
+    for r in recs_raw:
+        key = r.get("place_id") or f"{_normalize_place_name(r['place_name'])}::{r['city_id']}"
+        groups.setdefault(key, []).append(r)
+
+    items = []
+    seen_place_keys: set = set()
+
+    for r in recs_raw:  # already sorted newest first
+        key = r.get("place_id") or f"{_normalize_place_name(r['place_name'])}::{r['city_id']}"
+        if key in seen_place_keys:
+            continue
+        seen_place_keys.add(key)
+        group_recs = groups[key]
+        contributor_user_ids = list({g["user_id"] for g in group_recs})
+        contributors = [
+            {
+                **{k: g[k] for k in ("id", "place_name", "category", "note", "photo_url", "created_at", "city_id", "place_id") if k in g},
+                "user": public_user_brief(users_by_id[g["user_id"]]) if g["user_id"] in users_by_id else None,
+            }
+            for g in group_recs
+        ]
+        city = cities_by_id.get(r["city_id"])
+        if len(contributor_user_ids) >= 2:
+            items.append({
+                "type": "top_pick",
+                "id": f"toppick:{key}",
+                "created_at": group_recs[0]["created_at"],
+                "place_name": r["place_name"],
+                "place_id": r.get("place_id"),
+                "category": r.get("category"),
+                "city": {"id": city["id"], "name": city["name"], "country": city.get("country"), "flag_emoji": city.get("flag_emoji")} if city else None,
+                "contributors": contributors,
+                "is_saved": False,
+                "primary_rec_id": group_recs[0]["id"],
+            })
+        else:
+            items.append({
+                "type": "new_rec",
+                "id": f"rec:{r['id']}",
+                "created_at": r["created_at"],
+                "rec_id": r["id"],
+                "place_name": r["place_name"],
+                "place_id": r.get("place_id"),
+                "category": r.get("category"),
+                "note": r.get("note"),
+                "photo_url": r.get("photo_url"),
+                "city": {"id": city["id"], "name": city["name"], "country": city.get("country"), "flag_emoji": city.get("flag_emoji")} if city else None,
+                "user": public_user_brief(users_by_id[r["user_id"]]) if r["user_id"] in users_by_id else None,
+            })
+
+    for t in trips_raw:
+        city = cities_by_id.get(t["city_id"])
+        if not city:
+            continue
+        items.append({
+            "type": "new_trip",
+            "id": f"trip:{t['id']}",
+            "created_at": t["created_at"],
+            "city": {"id": city["id"], "name": city["name"], "country": city.get("country"), "flag_emoji": city.get("flag_emoji")},
+            "user": public_user_brief(users_by_id[t["user_id"]]) if t["user_id"] in users_by_id else None,
+        })
+
+    items.sort(key=lambda x: x["created_at"], reverse=True)
+    page = items[:limit]
+    next_cursor = page[-1]["created_at"] if len(items) > limit and page else None
+    return {"items": page, "next_cursor": next_cursor}
+
+
 @api.get("/explore/cities")
 async def explore_cities(user: dict = Depends(current_user)):
     """Cities where at least one followed user has a recommendation.

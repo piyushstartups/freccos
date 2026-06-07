@@ -3,20 +3,38 @@ import { Link, useNavigate } from "react-router-dom";
 import api from "../lib/api";
 import StackedAvatars from "../components/StackedAvatars";
 import Wordmark from "../components/Wordmark";
+import Feed from "../components/Feed";
 import { Search, Bell } from "lucide-react";
 import { track, Events } from "../lib/analytics";
+
+const SUBTABS = [
+  { id: "feed", label: "Feed" },
+  { id: "cities", label: "Cities" },
+];
 
 export default function Explore() {
   const [cities, setCities] = useState(null);
   const [q, setQ] = useState("");
   const [unread, setUnread] = useState(0);
+  const [subtab, setSubtab] = useState(() => {
+    try { return sessionStorage.getItem("freccos:explore:subtab") || "feed"; } catch { return "feed"; }
+  });
   const nav = useNavigate();
 
   useEffect(() => {
+    try { sessionStorage.setItem("freccos:explore:subtab", subtab); } catch { /* noop */ }
+  }, [subtab]);
+
+  useEffect(() => {
+    if (subtab !== "cities") return;
+    if (cities !== null) return; // already loaded
     (async () => {
       try { const { data } = await api.get("/explore/cities"); setCities(data); }
       catch { setCities([]); }
     })();
+  }, [subtab, cities]);
+
+  useEffect(() => {
     api.get("/users/me/notifications/unread-count").then(({ data }) => setUnread(data.count || 0)).catch(() => {});
   }, []);
 
@@ -46,6 +64,39 @@ export default function Explore() {
         </p>
       </div>
 
+      {/* Sub-tabs */}
+      <div className="px-4 pt-3 pb-1" style={{ display: "flex", gap: 8 }} data-testid="explore-subtabs">
+        {SUBTABS.map((t) => {
+          const active = subtab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setSubtab(t.id)}
+              data-testid={`subtab-${t.id}`}
+              className="btn-pill"
+              style={{
+                padding: "6px 14px",
+                fontSize: 13,
+                fontWeight: 600,
+                background: active ? "#0A84FF" : "transparent",
+                color: active ? "#fff" : "#8E8E93",
+                border: active ? "1px solid #0A84FF" : "1px solid #E5E5EA",
+              }}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {subtab === "feed" && (
+        <div className="pt-3" data-testid="explore-feed">
+          <Feed onSwitchToCities={() => setSubtab("cities")} />
+        </div>
+      )}
+
+      {subtab === "cities" && (
+        <>
       <div className="px-4 pt-4 pb-3" style={{ position: "sticky", top: 0, background: "#F2F2F7", zIndex: 5 }}>
         <div style={{ position: "relative" }}>
           <Search size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#8E8E93" }} />
@@ -141,6 +192,8 @@ export default function Explore() {
               );
             })}
           </div>
+        </>
+      )}
         </>
       )}
     </div>
