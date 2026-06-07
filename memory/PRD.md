@@ -43,7 +43,17 @@ Freccos is a private, invite-only travel recommendations PWA solving Discovery, 
 - Logo mark removed from every screen except Splash and Login (Signup/Forgot/AuthCallback now show the Wordmark)
 - Profile hero redesigned: avatar left, name + lock inline, bio + IG handle, single-line stats row, compact flag grid, horizontally scrollable milestone chips, joined date as tertiary text — Apple-Music/iOS-contact card density
 
+## Saved tab tick-off lifecycle (Feb 2026)
+- Friend Profile: Follow/Following pill is a compact 96×30 inline button next to the user's name (verified in iteration_2)
+- Backend `/api/trip-plans/{city_id}/check` now returns `{ok, prompt_add_to_trips, auto_removed}`; deletes the trip plan when every saved rec is ticked
+- TripDetail.jsx: ticking a saved friend's rec shows an iOS-style "Did you love it? Add your own rec for [place]?" ConfirmDialog. Confirm → AddRecommendationSheet pre-filled (place + category, city locked). Decline → toast + navigate back to /trips if all are ticked off
+- AddRecommendationSheet: new `prefillRec` prop pre-fills place_name, place_id, place_address, and category for fresh-add (non-edit) mode. Also fixed an unrelated `photoPath` ReferenceError on submit
+- TripDetail Delete uses ConfirmDialog (no more window.confirm)
+- pytest module `/app/backend/tests/test_trip_check_lifecycle.py` covers the auto-remove flag end-to-end
+
 ## Next tasks
 - Wire optional email provider for password reset
 - Add web push for "new rec in [City] from [Friend]"
+- Bump BottomNav z-index above #emergent-badge (pre-existing pointer-event overlap at 390px on right-side tabs)
+- Migrate remaining `window.confirm` usages in FriendProfile.jsx (unfollow/block) to ConfirmDialog
 - Add per-rec photo viewer + zoom
