@@ -17,6 +17,30 @@ import { flagForCountry } from "../lib/flags";
 
 const INSTAGRAM_GRADIENT = "linear-gradient(135deg,#f09433 0%,#e6683c 25%,#dc2743 50%,#cc2366 75%,#bc1888 100%)";
 
+function FollowButton({ profile, onClick, icon, label }) {
+  const isFollowing = profile.is_following;
+  const isPending = profile.request_status === "requested";
+  let bg = "#0A84FF", fg = "#fff", border = "none";
+  if (isFollowing) { bg = "#E5E5EA"; fg = "#1C1C1E"; }
+  else if (isPending) { bg = "transparent"; fg = "#8E8E93"; border = "1px solid rgba(255,255,255,0.2)"; }
+  return (
+    <button
+      data-testid="follow-btn"
+      onClick={onClick}
+      className="btn-pill"
+      style={{
+        background: bg, color: fg, border,
+        padding: "0 14px", height: 34, fontSize: 13, fontWeight: 600,
+        minWidth: 100, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+        flexShrink: 0,
+      }}
+    >
+      {icon}{label}
+    </button>
+  );
+}
+
+
 function Stat({ n, label, onClick, testId, disabled }) {
   const inner = (
     <>
@@ -155,10 +179,10 @@ export default function FriendProfile() {
 
   return (
     <div className="pb-32 fade-in" data-testid="friend-profile">
-      <div className="app-header" style={{ background: "#1C1C1E", color: "#fff", padding: "20px 16px 18px", position: "relative" }}>
-        {/* Subtle Freccos wordmark — top centre */}
-        <div style={{ position: "absolute", top: "calc(var(--safe-area-top) - 24px)", left: 0, right: 0, textAlign: "center", pointerEvents: "none" }}>
-          <Wordmark size={18} color="rgba(255,255,255,0.4)" weight={500} />
+      <div className="app-header profile-hero" style={{ background: "#1C1C1E", color: "#fff", padding: "44px 16px 22px", position: "relative" }}>
+        {/* Subtle Freccos watermark — bottom-right corner */}
+        <div style={{ position: "absolute", bottom: 6, right: 12, pointerEvents: "none" }}>
+          <Wordmark size={11} color="rgba(255,255,255,0.2)" weight={500} />
         </div>
         <button onClick={() => nav(-1)} style={{ color: "#0A84FF", display: "inline-flex", alignItems: "center", background: "transparent", border: "none", padding: 0, fontSize: 15 }}>
           <ChevronLeft size={20} /> Back
@@ -193,9 +217,17 @@ export default function FriendProfile() {
         <div style={{ display: "flex", alignItems: "flex-start", gap: 14, paddingRight: 44, marginTop: 8 }}>
           <Avatar user={profile} size={64} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 style={{ color: "#fff", fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: "-0.3px", lineHeight: 1.1 }}>
-              {profile.name}
-            </h1>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <h1 style={{ color: "#fff", fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: "-0.3px", lineHeight: 1.1, flex: "1 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {profile.name}
+              </h1>
+              <FollowButton
+                profile={profile}
+                onClick={toggleFollow}
+                icon={followBtnIcon}
+                label={followBtnLabel}
+              />
+            </div>
             {profile.bio && (
               <p style={{ color: "#C7C7CC", fontSize: 14, margin: "4px 0 0", lineHeight: 1.3 }}>{profile.bio}</p>
             )}
@@ -257,24 +289,6 @@ export default function FriendProfile() {
         {joined && (
           <p style={{ color: "#5A5A5F", fontSize: 11, marginTop: 10, marginBottom: 0 }}>On Freccos since {joined}</p>
         )}
-
-        {/* Follow / Following / Requested — full-width pill, own row, breathing room */}
-        <button
-          data-testid="follow-btn"
-          onClick={toggleFollow}
-          className="btn-pill"
-          style={{
-            width: "100%",
-            marginTop: 16,
-            padding: "12px 18px",
-            background: (profile.is_following || profile.request_status === "requested") ? "rgba(255,255,255,0.16)" : "#0A84FF",
-            color: "#fff",
-            fontSize: 15,
-            fontWeight: 600,
-          }}
-        >
-          {followBtnIcon}{followBtnLabel}
-        </button>
       </div>
 
       {/* Private + not following: limited view */}

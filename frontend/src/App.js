@@ -46,7 +46,7 @@ function screenNameFromPath(pathname) {
     return m.params.mode === "followers" ? "Followers" : "Following";
   }
   if (matchPath("/user/:userId", pathname)) return "Friend Profile";
-  if (pathname === "/trips") return "Bucket List";
+  if (pathname === "/trips") return "Saved";
   if (matchPath("/trips/:cityId", pathname)) return "Trip Plan";
   if (pathname === "/me") return "Profile";
   if (pathname === "/me/blocked") return "Blocked Accounts";

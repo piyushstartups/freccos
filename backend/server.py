@@ -269,6 +269,41 @@ _PURGE_USER_IDS = (
 )
 
 
+async def _merge_duplicate_cities():
+    """One-shot merge of cities sharing the same `name_lower`. Keeps the entry
+    with the richest data (proper country_code + flag), reassigns referencing
+    documents, deletes the rest. Idempotent."""
+    pipeline = [{"$group": {"_id": "$name_lower", "ids": {"$push": "$id"}, "count": {"$sum": 1}}},
+                {"$match": {"count": {"$gt": 1}}}]
+    merged = 0
+    async for g in db.cities.aggregate(pipeline):
+        ids = g["ids"]
+        docs = [d async for d in db.cities.find({"id": {"$in": ids}}, {"_id": 0})]
+        # Rank: prefer those with country_code, then with country, then with flag != 🌍
+        def score(d):
+            return (
+                1 if d.get("country_code") else 0,
+                1 if d.get("country") else 0,
+                1 if (d.get("flag_emoji") and d["flag_emoji"] != "🌍") else 0,
+            )
+        docs.sort(key=score, reverse=True)
+        keeper, losers = docs[0], docs[1:]
+        loser_ids = [d["id"] for d in losers]
+        if not loser_ids:
+            continue
+        # Reassign references
+        await db.recommendations.update_many({"city_id": {"$in": loser_ids}}, {"$set": {"city_id": keeper["id"]}})
+        await db.user_trips.update_many({"city_id": {"$in": loser_ids}}, {"$set": {"city_id": keeper["id"]}})
+        await db.trip_plans.update_many({"city_id": {"$in": loser_ids}}, {"$set": {"city_id": keeper["id"]}})
+        # Drop now-duplicate user_trips/trip_plans we may have created via the merge
+        await _dedup_pair("user_trips", "user_id", "city_id")
+        await _dedup_pair("trip_plans", "user_id", "city_id")
+        await db.cities.delete_many({"id": {"$in": loser_ids}})
+        merged += len(loser_ids)
+    if merged:
+        print(f"[startup] merged {merged} duplicate city row(s)")
+
+
 async def _purge_users(ids: tuple):
     if not ids:
         return
@@ -327,6 +362,8 @@ async def _dedup_pair(collection_name: str, key1: str, key2: str):
 async def startup():
     # One-time purge of explicitly-flagged user IDs (idempotent)
     await _purge_users(_PURGE_USER_IDS)
+    # Merge any duplicate cities (idempotent)
+    await _merge_duplicate_cities()
     # Indexes
     await db.users.create_index("email", unique=True)
     await db.users.create_index("invite_code", unique=True)
@@ -566,11 +603,35 @@ async def upsert_city(name: str, country: Optional[str] = None,
     name = name.strip()
     name_lower = name.lower()
     cc = (country_code or "").upper() or None
-    existing = await db.cities.find_one(
-        {"name_lower": name_lower, "country_code": cc}, {"_id": 0}
-    )
+    # First try exact match on (name_lower, country_code)
+    existing = await db.cities.find_one({"name_lower": name_lower, "country_code": cc}, {"_id": 0})
     if existing:
         return existing
+    # If incoming has a real country_code, also look for a stub entry that was
+    # inserted earlier without country info — merge them so we never end up
+    # with two cities for the same place.
+    if cc:
+        stub = await db.cities.find_one(
+            {"name_lower": name_lower, "$or": [{"country_code": {"$in": ["", None]}}, {"country_code": {"$exists": False}}]},
+            {"_id": 0},
+        )
+        if stub:
+            await db.cities.update_one(
+                {"id": stub["id"]},
+                {"$set": {
+                    "country": country or stub.get("country") or "",
+                    "country_code": cc,
+                    "flag_emoji": flag_for_country_code(cc),
+                }},
+            )
+            stub.update({"country": country or stub.get("country") or "", "country_code": cc, "flag_emoji": flag_for_country_code(cc)})
+            return stub
+    # If incoming has NO country_code, prefer reusing any city with a real cc
+    # so that follow-on Google-Places-driven creations don't fork a duplicate.
+    if not cc:
+        better = await db.cities.find_one({"name_lower": name_lower, "country_code": {"$nin": ["", None]}}, {"_id": 0})
+        if better:
+            return better
     city = {
         "id": str(uuid.uuid4()),
         "name": name, "name_lower": name_lower,

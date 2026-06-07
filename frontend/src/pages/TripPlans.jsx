@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../lib/api";
 import HeaderBrand from "../components/HeaderBrand";
-import { Briefcase } from "lucide-react";
+import { Bookmark } from "lucide-react";
 
 export default function TripPlans() {
   const [plans, setPlans] = useState(null);
@@ -20,17 +20,17 @@ export default function TripPlans() {
 
   return (
     <div className="pb-32 fade-in" data-testid="trips-page">
-      <HeaderBrand title="Bucket list" subtitle="Cities you're planning to visit." />
+      <HeaderBrand title="Saved" subtitle="Recommendations from your people." />
 
       {plans.length === 0 && (
         <div className="px-6 mt-8" data-testid="trips-empty">
-          <Briefcase size={36} color="#C7C7CC" />
-          <h3 className="t-title2 mt-3">Nothing on your bucket list yet</h3>
+          <Bookmark size={36} color="#C7C7CC" />
+          <h3 className="t-title2 mt-3">Nothing saved yet</h3>
           <p className="t-sub muted mt-1">
-            Explore a city and save recommendations from friends, or tap + to add a city you&apos;re dreaming of.
+            Explore a city and save recommendations from your people.
           </p>
           <Link to="/explore" className="btn-pill btn-primary inline-flex mt-4">
-            Explore cities
+            Explore →
           </Link>
         </div>
       )}

@@ -453,10 +453,10 @@ function ProfileHero({ profile, cityCount, countryCount, countries, joined, coun
   const followers = profile.follower_count || 0;
   const following = profile.following_count || 0;
   return (
-    <div className="app-header" style={{ background: "#1C1C1E", color: "#fff", padding: "28px 16px 18px", position: "relative" }} data-testid="profile-hero">
-      {/* Subtle Freccos wordmark — top centre */}
-      <div style={{ position: "absolute", top: "calc(var(--safe-area-top) - 24px)", left: 0, right: 0, textAlign: "center", pointerEvents: "none" }}>
-        <Wordmark size={18} color="rgba(255,255,255,0.4)" weight={500} />
+    <div className="app-header profile-hero" style={{ background: "#1C1C1E", color: "#fff", padding: "44px 16px 22px", position: "relative" }} data-testid="profile-hero">
+      {/* Subtle Freccos watermark — bottom-right corner of the dark hero */}
+      <div style={{ position: "absolute", bottom: 6, right: 12, pointerEvents: "none" }}>
+        <Wordmark size={11} color="rgba(255,255,255,0.2)" weight={500} />
       </div>
       {/* Settings gear, top-right */}
       <button

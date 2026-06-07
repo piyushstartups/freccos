@@ -56,7 +56,7 @@ export default function AddBucketListSheet({ open, onClose, onAdded }) {
       });
       track(Events.BUCKET_LIST_CITY_ADDED, { city_name: data.city?.name || cityName, country: selected?.country || null });
       track(Events.TRIP_PLAN_CREATED, { city_name: data.city?.name || cityName, country: selected?.country || null });
-      toast.success(`Added ${data.city?.name || cityName} to your bucket list`);
+      toast.success(`Added ${data.city?.name || cityName} to Saved`);
       onAdded?.(data);
       onClose?.();
     } catch (e) {
@@ -67,7 +67,7 @@ export default function AddBucketListSheet({ open, onClose, onAdded }) {
   };
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Add to bucket list" testId="add-bucket-sheet">
+    <BottomSheet open={open} onClose={onClose} title="Add a saved city" testId="add-bucket-sheet">
       <div className="px-4 pb-6" style={{ paddingBottom: "max(24px, env(safe-area-inset-bottom))" }}>
         <p className="t-sub muted mb-2">Drop in any city you’d love to visit.</p>
         <div style={{ position: "relative" }}>
@@ -103,7 +103,7 @@ export default function AddBucketListSheet({ open, onClose, onAdded }) {
           onClick={submit}
         >
           {submitting ? <Loader2 size={18} className="animate-spin" /> : <Bookmark size={18} />}
-          Add to bucket list
+          Add to Saved
         </button>
       </div>
     </BottomSheet>

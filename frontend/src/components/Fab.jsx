@@ -45,7 +45,7 @@ export default function Fab({ onAddRec, onAddTrip, onAddBucket }) {
             onClick={() => { setOpen(false); onAddBucket?.(); }}
           >
             <Bookmark size={18} color="#0A84FF" />
-            Add to bucket list
+            Add to saved
           </button>
         </div>
       )}

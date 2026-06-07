@@ -157,6 +157,6 @@ function ActivityText({ n }) {
   if (n.kind === "invite_signup")
     return <span className="t-sub"><strong>{actorName}</strong> just joined Freccos using your invite!</span>;
   if (n.kind === "bucket_recs")
-    return <span className="t-sub"><strong>{actorName}</strong> just added a recommendation in {n.payload?.city_name || "a city on your bucket list"}</span>;
+    return <span className="t-sub"><strong>{actorName}</strong> just added a recommendation in {n.payload?.city_name || "a city you've saved"}</span>;
   return <span className="t-sub">{actorName} did something</span>;
 }

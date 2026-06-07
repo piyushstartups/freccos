@@ -69,6 +69,12 @@ html, body {
   padding-right: max(16px, var(--safe-area-right)) !important;
 }
 
+/* Profile / friend-profile heroes get an extra 16px of generous editorial top
+   breathing room above the safe-area, à la Apple Music artist page. */
+.app-header.profile-hero {
+  padding-top: calc(var(--safe-area-top) + 16px) !important;
+}
+
 /* iOS-style scroll fade for sticky headers */
 .frec-scroll {
   -webkit-overflow-scrolling: touch;
