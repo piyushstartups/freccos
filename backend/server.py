@@ -272,7 +272,8 @@ _PURGE_USER_IDS = (
 async def _merge_duplicate_cities():
     """One-shot merge of cities sharing the same `name_lower`. Keeps the entry
     with the richest data (proper country_code + flag), reassigns referencing
-    documents, deletes the rest. Idempotent."""
+    documents, deletes the rest. Idempotent and safe against pre-existing
+    unique `(user_id, city_id)` indexes on user_trips / trip_plans."""
     pipeline = [{"$group": {"_id": "$name_lower", "ids": {"$push": "$id"}, "count": {"$sum": 1}}},
                 {"$match": {"count": {"$gt": 1}}}]
     merged = 0
@@ -291,11 +292,40 @@ async def _merge_duplicate_cities():
         loser_ids = [d["id"] for d in losers]
         if not loser_ids:
             continue
-        # Reassign references
+        # Reassign references — recommendations has no unique (user_id, city_id) index
         await db.recommendations.update_many({"city_id": {"$in": loser_ids}}, {"$set": {"city_id": keeper["id"]}})
-        await db.user_trips.update_many({"city_id": {"$in": loser_ids}}, {"$set": {"city_id": keeper["id"]}})
-        await db.trip_plans.update_many({"city_id": {"$in": loser_ids}}, {"$set": {"city_id": keeper["id"]}})
-        # Drop now-duplicate user_trips/trip_plans we may have created via the merge
+        # For user_trips & trip_plans, a unique (user_id, city_id) index may already
+        # exist from a previous deploy. Two collision sources need handling:
+        #   (a) the user already has a row with the keeper city_id, AND
+        #   (b) the user has rows pointing at MULTIPLE loser city_ids that will all
+        #       collapse onto the same keeper id after repointing.
+        # Strategy per affected user: keep exactly one row for the keeper (prefer
+        # an existing keeper row, else the most recent loser), delete the rest,
+        # then safely repoint the survivors with update_many.
+        for coll_name in ("user_trips", "trip_plans"):
+            coll = db[coll_name]
+            candidate_ids = [keeper["id"]] + loser_ids
+            affected_users = await coll.distinct("user_id", {"city_id": {"$in": candidate_ids}})
+            for uid in affected_users:
+                rows = [r async for r in coll.find(
+                    {"user_id": uid, "city_id": {"$in": candidate_ids}},
+                    {"_id": 1, "city_id": 1, "created_at": 1},
+                )]
+                if len(rows) <= 1:
+                    continue
+                # Prefer keeping the row that already points at the keeper city
+                keep = next((r for r in rows if r["city_id"] == keeper["id"]), None)
+                if keep is None:
+                    keep = max(rows, key=lambda r: r.get("created_at") or "")
+                to_delete = [r["_id"] for r in rows if r["_id"] != keep["_id"]]
+                if to_delete:
+                    await coll.delete_many({"_id": {"$in": to_delete}})
+            # Now safe — every affected user has at most one row in candidate_ids
+            await coll.update_many(
+                {"city_id": {"$in": loser_ids}},
+                {"$set": {"city_id": keeper["id"]}},
+            )
+        # Belt-and-braces: dedupe in case any dirty data slipped through
         await _dedup_pair("user_trips", "user_id", "city_id")
         await _dedup_pair("trip_plans", "user_id", "city_id")
         await db.cities.delete_many({"id": {"$in": loser_ids}})
@@ -360,36 +390,64 @@ async def _dedup_pair(collection_name: str, key1: str, key2: str):
 
 @app.on_event("startup")
 async def startup():
-    # One-time purge of explicitly-flagged user IDs (idempotent)
-    await _purge_users(_PURGE_USER_IDS)
-    # Merge any duplicate cities (idempotent)
-    await _merge_duplicate_cities()
-    # Indexes
-    await db.users.create_index("email", unique=True)
-    await db.users.create_index("invite_code", unique=True)
-    await db.users.create_index("id", unique=True)
-    await db.cities.create_index("id", unique=True)
-    await db.cities.create_index([("name_lower", 1), ("country_code", 1)], unique=True)
-    await db.recommendations.create_index("id", unique=True)
-    await db.recommendations.create_index([("user_id", 1), ("city_id", 1)])
-    await db.recommendations.create_index([("city_id", 1)])
-    await db.follows.create_index([("follower_id", 1), ("following_id", 1)], unique=True)
+    # Best-effort startup migrations — wrapped so a single migration failure
+    # never crashes the API and triggers a Cloudflare 520.
+    try:
+        # One-time purge of explicitly-flagged user IDs (idempotent)
+        await _purge_users(_PURGE_USER_IDS)
+    except Exception as e:
+        print(f"[startup] _purge_users failed (continuing): {e!r}")
+    try:
+        # Merge any duplicate cities (idempotent)
+        await _merge_duplicate_cities()
+    except Exception as e:
+        print(f"[startup] _merge_duplicate_cities failed (continuing): {e!r}")
+    # Indexes — each wrapped so a single index-create failure can't crash startup
+    async def _try(coll_name, *args, **kwargs):
+        try:
+            await db[coll_name].create_index(*args, **kwargs)
+        except Exception as e:
+            print(f"[startup] create_index on {coll_name} failed (continuing): {e!r}")
+    await _try("users", "email", unique=True)
+    await _try("users", "invite_code", unique=True)
+    await _try("users", "id", unique=True)
+    await _try("cities", "id", unique=True)
+    await _try("cities", [("name_lower", 1), ("country_code", 1)], unique=True)
+    await _try("recommendations", "id", unique=True)
+    await _try("recommendations", [("user_id", 1), ("city_id", 1)])
+    await _try("recommendations", [("city_id", 1)])
+    await _try("follows", [("follower_id", 1), ("following_id", 1)], unique=True)
     # Dedup before unique index — guards against pre-existing duplicate rows
     # that would otherwise crash the backend at startup.
-    await _dedup_pair("trip_plans", "user_id", "city_id")
-    await db.trip_plans.create_index([("user_id", 1), ("city_id", 1)], unique=True)
-    await _dedup_pair("user_trips", "user_id", "city_id")
-    await db.user_trips.create_index([("user_id", 1), ("city_id", 1)], unique=True)
-    await db.user_sessions.create_index("session_token")
-    await db.password_reset_tokens.create_index("expires_at", expireAfterSeconds=0)
-    await _dedup_pair("follow_requests", "requester_id", "target_id")
-    await db.follow_requests.create_index([("requester_id", 1), ("target_id", 1)], unique=True)
-    await db.follow_requests.create_index("target_id")
-    await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
+    try:
+        await _dedup_pair("trip_plans", "user_id", "city_id")
+    except Exception as e:
+        print(f"[startup] _dedup_pair(trip_plans) failed: {e!r}")
+    await _try("trip_plans", [("user_id", 1), ("city_id", 1)], unique=True)
+    try:
+        await _dedup_pair("user_trips", "user_id", "city_id")
+    except Exception as e:
+        print(f"[startup] _dedup_pair(user_trips) failed: {e!r}")
+    await _try("user_trips", [("user_id", 1), ("city_id", 1)], unique=True)
+    await _try("user_sessions", "session_token")
+    await _try("password_reset_tokens", "expires_at", expireAfterSeconds=0)
+    try:
+        await _dedup_pair("follow_requests", "requester_id", "target_id")
+    except Exception as e:
+        print(f"[startup] _dedup_pair(follow_requests) failed: {e!r}")
+    await _try("follow_requests", [("requester_id", 1), ("target_id", 1)], unique=True)
+    await _try("follow_requests", "target_id")
+    await _try("notifications", [("user_id", 1), ("created_at", -1)])
     # Init storage
-    init_storage()
+    try:
+        init_storage()
+    except Exception as e:
+        print(f"[startup] init_storage failed (continuing): {e!r}")
     # Seed demo users
-    await seed_demo_users()
+    try:
+        await seed_demo_users()
+    except Exception as e:
+        print(f"[startup] seed_demo_users failed (continuing): {e!r}")
 
 
 async def seed_demo_users():
