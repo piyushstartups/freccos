@@ -1,0 +1,39 @@
+{
+  "summary": "Validated the 5 Feed (home tab) fixes for Freccos at viewport 390x844 as Priya. All target behaviours PASS. Backend /api/feed correctly emits is_saved on every new_rec (and would for top_pick when present). Sundowner Cafe (rec_id ad88549b...) loads with Saved state from DB and survives a hard reload. Saving any unsaved card immediately turns Saved and also persists across reload. Tap on the card body (place name / subtitle / note area) opens the PlaceSheet bottom sheet. Tap on data-testid='feed-avatar-<userId>' OR 'feed-name-<userId>' navigates to /user/<userId> (avatar+name correctly stopPropagation so they do NOT open the place sheet). No 'No note' placeholder text is rendered anywhere. Seed data limitations: no top_pick items and no recs with photo_url in current feed — the photo 16:9 layout and top_pick PlaceSheet open were not exercised against live data (code paths in Feed.jsx are correct by inspection).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_feed_is_saved.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional seed enhancement: add at least 1 rec with photo_url (to exercise Feed 16:9 photo layout + ClampedNote 'Read more' under a photo) and seed enough overlapping recs that the feed yields a top_pick card (3+ contributors on the same place). These code paths look correct but were not testable against current data.",
+    "Pre-existing from iteration_2: #emergent-badge can intercept pointer events on right-side bottom-nav at 390px. Hidden via test init-script here; main agent should raise BottomNav z-index above 9999 for production."
+  ],
+  "critical_code_review_comments": [
+    "Feed.jsx CardHeader: both the user name (inside the profile Link) and the place name use class 't-title3'. Functionally fine because the Link with stopPropagation owns the name region, but it makes generic selectors like '.t-title3' ambiguous in tests — consider giving the place name its own data-testid (e.g., feed-place-name-<recId>) for cleaner automation.",
+    "Feed.jsx mergeSavedFromItems uses replace=true on every loadFirst — that's intentional and correct for full refresh. However refreshSavedFromServer calls /feed with a dynamic limit derived from current items.length, which means a stale `items` ref via the useCallback closure could request a smaller-than-needed page on rapid toggles. Minor — toast-driven flows are fine in practice.",
+    "ClampedNote uses scrollHeight vs clientHeight on mount to detect overflow — re-detection only fires when `text` prop changes. If a layout-affecting viewport resize occurs (rare on mobile), the 'Read more' toggle may not appear/disappear correctly. Acceptable for PWA.",
+    "Backend /api/feed: saved_place_keys is computed once per request from the caller's trip_plans, used by both new_rec and top_pick branches — correct. Good fix vs. previous hardcoded False."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_feed_is_saved.py (new — 2 tests, both pass)"
+  ],
+  "success_rate": {
+    "backend": "100% (2/2 new tests pass; both is_saved emission and Sundowner saved=true verified)",
+    "frontend": "100% on testable flows (card-open, save-persist, reload-persist, new-save-persist, avatar nav, name nav, no-note placeholder)"
+  },
+  "test_credentials": "priya@freccos.com / Demo1234!",
+  "seed_data_creation": "None. Saved one unsaved rec during testing (state persists in Priya's trip_plans).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "New module /app/backend/tests/test_feed_is_saved.py covers is_saved correctness. For UI testing of Feed cards: BOTH the user name AND place name inside a card use class 't-title3' — use get_by_text(<place_name>) to target the place title, NOT a generic '.t-title3' selector (it will hit the user name link and navigate to /user/<id>). PlaceSheet testid is 'place-sheet' (from BottomSheet wrapper); close button is 'place-sheet-close', backdrop is 'place-sheet-backdrop'. After the place sheet opens, the backdrop intercepts pointer events on the feed — always close the sheet (testid place-sheet-close) before next action. Current seed has 5 new_rec items for Priya, 0 top_pick, 0 with photo_url; main agent may want to enrich seed for full coverage.",
+  "rca of the issue": "No bugs to RCA — all 5 reported issues from the original request are now resolved. The fixes in Feed.jsx (savedKeys hydrated from server is_saved every load, CardShell maxHeight removed, ClampedNote with stopPropagation Read more, CardHeader avatar+name as Links with stopPropagation) and backend (is_saved derived from caller's saved_place_keys for both new_rec and top_pick) work end-to-end."
+}

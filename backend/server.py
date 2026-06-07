@@ -1471,6 +1471,17 @@ async def feed(
     users_by_id = {u["id"]: u async for u in db.users.find({"id": {"$in": user_ids_needed}}, {"_id": 0, "password_hash": 0})}
     cities_by_id = {c["id"]: c async for c in db.cities.find({"id": {"$in": city_ids_needed}}, {"_id": 0})}
 
+    # Compute which place_keys the current user has already saved, across all trip plans.
+    # Source of truth — used so the Feed's Save button stays consistent on reload.
+    saved_place_keys: set = set()
+    saved_rec_ids: set = set()
+    async for plan in db.trip_plans.find({"user_id": user["id"]}, {"_id": 0, "saved_recs": 1}):
+        for s in plan.get("saved_recs", []) or []:
+            saved_rec_ids.add(s["recommendation_id"])
+    if saved_rec_ids:
+        async for r in db.recommendations.find({"id": {"$in": list(saved_rec_ids)}}, {"_id": 0}):
+            saved_place_keys.add(_place_key(r))
+
     # Group recs by place (place_id preferred, fall back to normalised name + city)
     groups: dict = {}
     for r in recs_raw:
@@ -1495,6 +1506,9 @@ async def feed(
             for g in group_recs
         ]
         city = cities_by_id.get(r["city_id"])
+        # Compute the canonical place key the same way as City and Trip Plan endpoints.
+        place_key = r.get("place_id") or f"name::{r.get('place_name_normalized') or _normalize_place_name(r.get('place_name',''))}"
+        is_saved = place_key in saved_place_keys
         if len(contributor_user_ids) >= 2:
             items.append({
                 "type": "top_pick",
@@ -1505,7 +1519,7 @@ async def feed(
                 "category": r.get("category"),
                 "city": {"id": city["id"], "name": city["name"], "country": city.get("country"), "flag_emoji": city.get("flag_emoji")} if city else None,
                 "contributors": contributors,
-                "is_saved": False,
+                "is_saved": is_saved,
                 "primary_rec_id": group_recs[0]["id"],
             })
         else:
@@ -1521,6 +1535,7 @@ async def feed(
                 "photo_url": r.get("photo_url"),
                 "city": {"id": city["id"], "name": city["name"], "country": city.get("country"), "flag_emoji": city.get("flag_emoji")} if city else None,
                 "user": public_user_brief(users_by_id[r["user_id"]]) if r["user_id"] in users_by_id else None,
+                "is_saved": is_saved,
             })
 
     for t in trips_raw:

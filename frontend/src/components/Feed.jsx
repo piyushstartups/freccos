@@ -13,6 +13,11 @@ import { track, Events } from "../lib/analytics";
 const PAGE_FIRST = 20;
 const PAGE_MORE = 10;
 
+// Stable place key — must match the backend's _place_key
+function placeKeyOf(item) {
+  return item.place_id || `name::${(item.place_name || "").toLowerCase().trim()}`;
+}
+
 export default function Feed({ onSwitchToCities }) {
   const nav = useNavigate();
   const { user } = useAuth();
@@ -23,7 +28,8 @@ export default function Feed({ onSwitchToCities }) {
   const [refreshing, setRefreshing] = useState(false);
   const [pullY, setPullY] = useState(0);
   const [placeOpen, setPlaceOpen] = useState(null);
-  const [savedIds, setSavedIds] = useState(new Set());
+  // Saved state is keyed by place_key so a save persists across rec instances of the same place.
+  const [savedKeys, setSavedKeys] = useState(new Set());
   const sentinelRef = useRef(null);
   const containerRef = useRef(null);
   const pullStartY = useRef(null);
@@ -31,17 +37,30 @@ export default function Feed({ onSwitchToCities }) {
   // Cached items in sessionStorage so re-open feels instant
   const CACHE_KEY = "freccos:feed:v1";
 
+  // Build the savedKeys set from the server's `is_saved` flags so it survives reloads.
+  const mergeSavedFromItems = useCallback((newItems, replace = false) => {
+    setSavedKeys((prev) => {
+      const next = replace ? new Set() : new Set(prev);
+      for (const it of newItems) {
+        if (it && it.is_saved) next.add(placeKeyOf(it));
+      }
+      return next;
+    });
+  }, []);
+
   const loadFirst = useCallback(async (refresh = false) => {
     if (refresh) setRefreshing(true);
     try {
       const { data } = await api.get("/feed", { params: { limit: PAGE_FIRST } });
-      setItems(data.items || []);
+      const list = data.items || [];
+      setItems(list);
       setCursor(data.next_cursor);
       setHasMore(!!data.next_cursor);
+      mergeSavedFromItems(list, true);
       try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch { /* noop */ }
     } catch { /* leave items as is */ }
     finally { setRefreshing(false); }
-  }, []);
+  }, [mergeSavedFromItems]);
 
   // Cache-then-network on mount
   useEffect(() => {
@@ -54,21 +73,24 @@ export default function Feed({ onSwitchToCities }) {
       setItems(cached.items);
       setCursor(cached.next_cursor);
       setHasMore(!!cached.next_cursor);
+      mergeSavedFromItems(cached.items, true);
     }
     loadFirst(false);
-  }, [loadFirst]);
+  }, [loadFirst, mergeSavedFromItems]);
 
   const loadMore = useCallback(async () => {
     if (!cursor || loadingMore) return;
     setLoadingMore(true);
     try {
       const { data } = await api.get("/feed", { params: { limit: PAGE_MORE, before: cursor } });
-      setItems((prev) => [...(prev || []), ...(data.items || [])]);
+      const list = data.items || [];
+      setItems((prev) => [...(prev || []), ...list]);
       setCursor(data.next_cursor);
       setHasMore(!!data.next_cursor);
+      mergeSavedFromItems(list, false);
     } catch { /* keep what we have */ }
     finally { setLoadingMore(false); }
-  }, [cursor, loadingMore]);
+  }, [cursor, loadingMore, mergeSavedFromItems]);
 
   // IntersectionObserver-driven infinite scroll
   useEffect(() => {
@@ -100,17 +122,19 @@ export default function Feed({ onSwitchToCities }) {
 
   const openPlace = (item) => {
     const cityId = item.city?.id;
+    if (!cityId) return;
+    const key = placeKeyOf(item);
     if (item.type === "new_rec") {
       track(Events.PLACE_CARD_OPENED, { place_name: item.place_name, city_id: cityId, category: item.category, source: "feed" });
       setPlaceOpen({
         cityId,
         group: {
-          place_key: item.rec_id,
+          place_key: key,
           place_name: item.place_name,
           place_id: item.place_id,
           category: item.category,
           photo_url: item.photo_url,
-          is_saved: savedIds.has(item.rec_id),
+          is_saved: savedKeys.has(key),
           primary_rec_id: item.rec_id,
           contributors: [{
             id: item.rec_id,
@@ -128,11 +152,11 @@ export default function Feed({ onSwitchToCities }) {
       setPlaceOpen({
         cityId,
         group: {
-          place_key: item.primary_rec_id,
+          place_key: key,
           place_name: item.place_name,
           place_id: item.place_id,
           category: item.category,
-          is_saved: false,
+          is_saved: savedKeys.has(key),
           primary_rec_id: item.primary_rec_id,
           contributors: item.contributors,
         },
@@ -140,11 +164,25 @@ export default function Feed({ onSwitchToCities }) {
     }
   };
 
+  // Refresh saved state when the PlaceSheet save toggles — re-pull /feed quietly
+  const refreshSavedFromServer = useCallback(async () => {
+    try {
+      const { data } = await api.get("/feed", { params: { limit: Math.max(items?.length || PAGE_FIRST, PAGE_FIRST) } });
+      mergeSavedFromItems(data.items || [], true);
+    } catch { /* noop */ }
+  }, [items, mergeSavedFromItems]);
+
   const inlineSave = async (item, e) => {
     e.stopPropagation();
+    const key = placeKeyOf(item);
+    if (savedKeys.has(key)) {
+      // Already saved — open the place sheet so the user can unsave with confirmation
+      openPlace(item);
+      return;
+    }
     try {
       await api.post(`/trip-plans/${item.city.id}/save`, { recommendation_id: item.rec_id });
-      setSavedIds((s) => new Set([...s, item.rec_id]));
+      setSavedKeys((s) => new Set([...s, key]));
       toast.success(`Saved ${item.place_name}`);
       track(Events.RECOMMENDATION_SAVED, { place_name: item.place_name, city_id: item.city.id, saved_from_user_id: item.user?.id });
     } catch (err) { toast.error(err?.response?.data?.detail || "Couldn't save"); }
@@ -193,7 +231,10 @@ export default function Feed({ onSwitchToCities }) {
 
       <div className="px-4" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {items.map((item) => {
-          if (item.type === "new_rec") return <NewRecCard key={item.id} item={item} saved={savedIds.has(item.rec_id)} onOpen={() => openPlace(item)} onSave={(e) => inlineSave(item, e)} />;
+          if (item.type === "new_rec") {
+            const key = placeKeyOf(item);
+            return <NewRecCard key={item.id} item={item} saved={savedKeys.has(key)} onOpen={() => openPlace(item)} onSave={(e) => inlineSave(item, e)} />;
+          }
           if (item.type === "new_trip") return <NewTripCard key={item.id} item={item} onExplore={() => { track(Events.CITY_EXPLORED, { city_name: item.city.name, country: item.city.country, source: "feed" }); nav(`/city/${item.city.id}`); }} />;
           if (item.type === "top_pick") return <TopPickCard key={item.id} item={item} onOpen={() => openPlace(item)} />;
           return null;
@@ -213,7 +254,7 @@ export default function Feed({ onSwitchToCities }) {
         onClose={() => setPlaceOpen(null)}
         cityId={placeOpen?.cityId}
         group={placeOpen?.group}
-        onChange={() => { /* feed doesn't need refresh on save toggle */ }}
+        onChange={refreshSavedFromServer}
       />
     </div>
   );
@@ -236,8 +277,6 @@ function CardShell({ children, onClick, tonal = false, testId }) {
         cursor: onClick ? "pointer" : "default",
         boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
         borderRadius: 12,
-        maxHeight: 320,
-        overflow: "hidden",
       }}
     >
       {children}
@@ -246,20 +285,81 @@ function CardShell({ children, onClick, tonal = false, testId }) {
 }
 
 function CardHeader({ user, when }) {
+  // Avatar and name are always profile links — stopPropagation so they don't open the place sheet.
+  const stop = (e) => e.stopPropagation();
+  if (!user?.id) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <Avatar user={user} size={36} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="t-title3" style={{ fontSize: 14 }}>{user?.name}</div>
+        </div>
+        <div className="t-cap tertiary" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{formatRelativeTime(when)}</div>
+      </div>
+    );
+  }
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      <Avatar user={user} size={36} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="t-title3" style={{ fontSize: 14 }}>{user?.name}</div>
-      </div>
+      <Link
+        to={`/user/${user.id}`}
+        onClick={stop}
+        style={{ display: "inline-flex", textDecoration: "none" }}
+        data-testid={`feed-avatar-${user.id}`}
+      >
+        <Avatar user={user} size={36} />
+      </Link>
+      <Link
+        to={`/user/${user.id}`}
+        onClick={stop}
+        style={{ flex: 1, minWidth: 0, textDecoration: "none", color: "inherit" }}
+        data-testid={`feed-name-${user.id}`}
+      >
+        <div className="t-title3" style={{ fontSize: 14 }}>{user.name}</div>
+      </Link>
       <div className="t-cap tertiary" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{formatRelativeTime(when)}</div>
     </div>
   );
 }
 
+// Compact note with 3-line clamp and inline "Read more" toggle
+function ClampedNote({ text }) {
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // Detect overflow once mounted
+    setOverflows(el.scrollHeight > el.clientHeight + 1);
+  }, [text]);
+  return (
+    <div style={{ marginTop: 6 }}>
+      <p
+        ref={ref}
+        style={{
+          color: "#3a3a3c", fontSize: 14, lineHeight: 1.4, margin: 0,
+          display: "-webkit-box",
+          WebkitLineClamp: expanded ? "unset" : 3,
+          WebkitBoxOrient: "vertical",
+          overflow: "hidden",
+          wordBreak: "break-word",
+        }}
+      >
+        {text}
+      </p>
+      {overflows && !expanded && (
+        <button
+          onClick={(e) => { e.stopPropagation(); setExpanded(true); }}
+          style={{ background: "transparent", border: "none", padding: 0, marginTop: 4, color: "#0A84FF", fontSize: 13, fontWeight: 500, cursor: "pointer" }}
+        >
+          Read more
+        </button>
+      )}
+    </div>
+  );
+}
+
 function NewRecCard({ item, saved, onOpen, onSave }) {
-  const truncated = item.note && item.note.length > 220;
-  const noteShown = truncated ? item.note.slice(0, 200).trim() + "…" : item.note;
   return (
     <CardShell onClick={onOpen} testId={`feed-new-rec-${item.rec_id}`}>
       <CardHeader user={item.user} when={item.created_at} />
@@ -276,13 +376,9 @@ function NewRecCard({ item, saved, onOpen, onSave }) {
           }}
         />
       )}
-      <div className="t-title3" style={{ marginTop: 10 }}>{item.place_name}</div>
-      {noteShown && (
-        <p style={{ color: "#3a3a3c", fontSize: 14, marginTop: 6, lineHeight: 1.4 }}>
-          {noteShown}{truncated && <span style={{ color: "#0A84FF", marginLeft: 4 }}>Read more</span>}
-        </p>
-      )}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12 }}>
+      <div className="t-title3" style={{ marginTop: 10, wordBreak: "break-word" }}>{item.place_name}</div>
+      {item.note && <ClampedNote text={item.note} />}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, gap: 12 }}>
         <CategoryChip category={item.category} />
         <button
           onClick={onSave}
@@ -293,6 +389,8 @@ function NewRecCard({ item, saved, onOpen, onSave }) {
             color: saved ? "#1B7C2D" : "#fff",
             border: saved ? "1px solid #30D158" : "none",
             padding: "6px 14px", fontSize: 13,
+            display: "inline-flex", alignItems: "center", gap: 6,
+            flexShrink: 0,
           }}
         >
           {saved ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
@@ -327,12 +425,13 @@ function TopPickCard({ item, onOpen }) {
   const namesLine = contributors.length === 2
     ? `${contributors[0].user?.name?.split(" ")[0]} and ${contributors[1].user?.name?.split(" ")[0]} recommended this`
     : `${contributors[0].user?.name?.split(" ")[0]}, ${contributors[1]?.user?.name?.split(" ")[0]} + ${contributors.length - 2} more recommended this`;
+  const stop = (e) => e.stopPropagation();
   return (
     <CardShell tonal onClick={onOpen} testId={`feed-top-pick-${item.id}`}>
       <div className="t-cap tertiary" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, color: "#0A84FF" }}>
         <Sparkles size={12} /> Your people love this place
       </div>
-      <div className="t-title2" style={{ marginTop: 8, fontSize: 18, fontWeight: 700 }}>{item.place_name}</div>
+      <div className="t-title2" style={{ marginTop: 8, fontSize: 18, fontWeight: 700, wordBreak: "break-word" }}>{item.place_name}</div>
       {item.city && (
         <div className="t-sub muted" style={{ marginTop: 2, fontSize: 13 }}>
           {item.city.name} {item.city.flag_emoji}
@@ -341,9 +440,21 @@ function TopPickCard({ item, onOpen }) {
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
         <div style={{ display: "inline-flex" }}>
           {visible.map((c, i) => (
-            <div key={c.id || i} style={{ marginLeft: i === 0 ? 0 : -8, border: "2px solid #F0F7FF", borderRadius: "50%" }}>
-              <Avatar user={c.user} size={28} />
-            </div>
+            c.user?.id ? (
+              <Link
+                key={c.id || i}
+                to={`/user/${c.user.id}`}
+                onClick={stop}
+                style={{ marginLeft: i === 0 ? 0 : -8, border: "2px solid #F0F7FF", borderRadius: "50%", display: "inline-block" }}
+                data-testid={`feed-top-avatar-${c.user.id}`}
+              >
+                <Avatar user={c.user} size={28} />
+              </Link>
+            ) : (
+              <div key={c.id || i} style={{ marginLeft: i === 0 ? 0 : -8, border: "2px solid #F0F7FF", borderRadius: "50%" }}>
+                <Avatar user={c.user} size={28} />
+              </div>
+            )
           ))}
         </div>
         <p style={{ color: "#1C1C1E", fontSize: 14, lineHeight: 1.4, margin: 0 }}>{namesLine}</p>
