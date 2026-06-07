@@ -6,7 +6,7 @@ import { Camera, Loader2, Check } from "lucide-react";
 import { toast } from "sonner";
 import { track, Events } from "../lib/analytics";
 
-export default function AddRecommendationSheet({ open, onClose, lockedCity, onCreated, editingRec }) {
+export default function AddRecommendationSheet({ open, onClose, lockedCity, onCreated, editingRec, prefillRec }) {
   const isEdit = !!editingRec;
   const [placeQuery, setPlaceQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
@@ -37,8 +37,19 @@ export default function AddRecommendationSheet({ open, onClose, lockedCity, onCr
       setNote(editingRec.note || "");
       if (editingRec.photo_url) setPhoto({ url: editingRec.photo_url });
       // No city editing in edit mode — locked to current city
+    } else if (prefillRec) {
+      // Pre-fill from a saved friend's rec — user is adding their own version
+      setPlaceQuery(prefillRec.place_name || "");
+      setCategory(prefillRec.category || null);
+      if (prefillRec.place_id) {
+        setSelectedPlace({
+          place_id: prefillRec.place_id,
+          display_name: prefillRec.place_name || "",
+          formatted_address: prefillRec.place_address || "",
+        });
+      }
     }
-  }, [open, editingRec]);
+  }, [open, editingRec, prefillRec]);
 
   useEffect(() => {
     if (isEdit) return;             // no autocomplete when editing — keep place locked
@@ -125,7 +136,7 @@ export default function AddRecommendationSheet({ open, onClose, lockedCity, onCr
           city_name: lockedCity?.name || cityName.trim(),
           country: lockedCity?.country || country || null,
           category,
-          has_photo: !!photoPath,
+          has_photo: !!photo,
           has_note: !!(note && note.trim()),
         });
         toast.success("Recommendation added!");

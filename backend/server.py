@@ -1895,10 +1895,18 @@ async def check_rec(city_id: str, req: CheckRecReq, user: dict = Depends(current
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Trip plan not found")
-    # If newly checked, return a prompt if user has no recs in this city yet
-    has_own = await db.recommendations.find_one({"user_id": user["id"], "city_id": city_id})
-    prompt = (req.checked and not has_own)
-    return {"ok": True, "prompt_add_to_trips": prompt}
+    # If newly checked, prompt user to add their own rec ("Did you love it?")
+    prompt = bool(req.checked)
+    # Auto-remove the trip plan if every saved rec is now ticked
+    auto_removed = False
+    plan = await db.trip_plans.find_one({"user_id": user["id"], "city_id": city_id}, {"_id": 0})
+    if plan:
+        saved_ids = {s["recommendation_id"] for s in plan.get("saved_recs", [])}
+        checked_ids = set(plan.get("checked_recs", []))
+        if req.checked and saved_ids and saved_ids.issubset(checked_ids):
+            await db.trip_plans.delete_one({"user_id": user["id"], "city_id": city_id})
+            auto_removed = True
+    return {"ok": True, "prompt_add_to_trips": prompt, "auto_removed": auto_removed}
 
 
 # ----------------------- Google Places proxy -----------------------

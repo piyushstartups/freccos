@@ -1,0 +1,44 @@
+{
+  "summary": "Validated the two new fixes for Freccos: (1) inline Follow pill button on Friend Profile, and (2) Saved-tab tick-off lifecycle (love prompt -> Not now auto-remove, Add my rec prefilled AddRec sheet). All scenarios PASS end-to-end. Backend POST /api/trip-plans/{city_id}/check now returns {ok, prompt_add_to_trips, auto_removed} and deletes the plan when every saved rec is ticked (verified via new pytest module test_trip_check_lifecycle.py). Frontend UI verified at 390x844: Follow button is a 96x30 pill inline to the right of the friend's name inside the dark hero; tapping the green tick on Priya's lone Goa rec opens an iOS-style ConfirmDialog 'Did you love it? Add your own rec for Thalassa?' with 'Not now'/'Add my rec'; 'Not now' navigates to /trips and Goa disappears from Saved; 'Add my rec' opens AddRecommendationSheet pre-filled with place=Thalassa, category=Experience, city locked to Goa. Trip-detail Delete button uses ConfirmDialog (not window.confirm).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/trip-plans/{city_id}", "issue": "GET returns 200 with implicit empty plan {id:null, saved_recs:[]} when no plan exists in DB, rather than 404. This is by design (frontend relies on it), but worth noting because the original review request expected 404 after auto-remove. The plan IS deleted from MongoDB — only the GET endpoint synthesises an empty placeholder."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_trip_check_lifecycle.py",
+    "/app/backend/tests/test_backend.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Pre-existing iteration_1 issue still present: #emergent-badge intercepts pointer events on right-side bottom-nav items at 390px width (nav-trips, nav-profile). Not a new regression; raise BottomNav z-index above 9999 or hide the badge on app routes.",
+    "Pre-existing iteration_1 test_backend.py has 3 stale assertions (top_pick contributors count, Tokyo lookup via arjun_client, follow_unfollow). Not new regressions — caused by data/seed evolution. Update those tests or seed.",
+    "Optional: Add a Tokyo rec from a second seeded user (e.g., Sara) so the 'partial-tick auto_removed=False' lifecycle test no longer skips."
+  ],
+  "critical_code_review_comments": [
+    "TripDetail.jsx onClose path of AddRecommendationSheet calls toast('All ticked off — removed from Saved') even if the user simply closed the sheet without adding — this is intentional per spec (auto-remove still honoured) but the toast text could mislead the user into thinking their rec was saved. Consider 'Saved cleared for this city' instead.",
+    "Server check_rec endpoint deletes the trip plan when saved_ids.issubset(checked_ids) AND req.checked is True. Edge case: if a friend's rec is unsaved by the friend after Priya saved it, saved_ids may contain a stale id that no longer matches any rec — currently fine (set comparison still works on string ids), but worth documenting.",
+    "FriendProfile.jsx still uses window.confirm for unfollow / block (lines 128 + 147). Trip detail was migrated to ConfirmDialog; consider doing the same for consistency.",
+    "FriendProfile follow button label/icon logic (lines 165-168) duplicates state already encoded inside FollowButton component — minor DRY refactor: pass profile only and let the component derive label/icon."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_trip_check_lifecycle.py (created, 3 tests, 2 pass + 1 skip)"
+  ],
+  "success_rate": {
+    "backend": "100% on new lifecycle tests (2/2 executed, 1 skipped due to insufficient seed data)",
+    "frontend": "100% on the two features under review (Friend Profile follow button + tick-off lifecycle + delete confirm dialog)"
+  },
+  "test_credentials": "priya@freccos.com / Demo1234! (Goa city_id 3815de94-8e52-42da-91b1-2f384b8e63c6, rec_id ac398418-1bfc-4e27-87e0-3f7030a865a2)",
+  "seed_data_creation": "None. Used the API to repeatedly reset Priya's Goa trip plan via DELETE+/save between scenarios; final state leaves Priya's Goa plan empty (auto-removed after the last test).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "New pytest module /app/backend/tests/test_trip_check_lifecycle.py covers the auto_removed endpoint. Note GET /trip-plans/{city_id} returns 200 with id=null when the plan doesn't exist (implicit empty plan) — assert on id is None rather than status 404. UI testing requires hiding #emergent-badge via init script at 390px to avoid bottom-nav overlay; otherwise selectors and data-testids work cleanly.",
+  "rca of the issue": "No new bugs found. Both fixes from this iteration validated. Pre-existing emergent-badge overlay on bottom-nav still present from iteration 1; main agent should bump BottomNav z-index to 10000."
+}

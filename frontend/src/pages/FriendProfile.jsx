@@ -30,9 +30,10 @@ function FollowButton({ profile, onClick, icon, label }) {
       className="btn-pill"
       style={{
         background: bg, color: fg, border,
-        padding: "0 14px", height: 34, fontSize: 13, fontWeight: 600,
-        minWidth: 100, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+        padding: "0 12px", height: 30, fontSize: 13, fontWeight: 600,
+        minWidth: 96, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
         flexShrink: 0,
+        marginTop: 2,  // visually align button cap-line with the name's cap-line
       }}
     >
       {icon}{label}
@@ -217,7 +218,7 @@ export default function FriendProfile() {
         <div style={{ display: "flex", alignItems: "flex-start", gap: 14, paddingRight: 44, marginTop: 8 }}>
           <Avatar user={profile} size={64} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
               <h1 style={{ color: "#fff", fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: "-0.3px", lineHeight: 1.1, flex: "1 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {profile.name}
               </h1>
@@ -229,7 +230,7 @@ export default function FriendProfile() {
               />
             </div>
             {profile.bio && (
-              <p style={{ color: "#C7C7CC", fontSize: 14, margin: "4px 0 0", lineHeight: 1.3 }}>{profile.bio}</p>
+              <p style={{ color: "#C7C7CC", fontSize: 14, margin: "10px 0 0", lineHeight: 1.35 }}>{profile.bio}</p>
             )}
             {profile.instagram_handle && (
               <a
