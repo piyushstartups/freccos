@@ -6,8 +6,8 @@ export default function StackedAvatars({ users = [], size = 28, max = 3 }) {
   const overflow = users.length - visible.length;
   return (
     <span className="stack-avatars" style={{ verticalAlign: "middle" }}>
-      {visible.map((u) => (
-        <Avatar key={u.id} user={u} size={size} />
+      {visible.map((u, idx) => (
+        <Avatar key={`${u.id}-${idx}`} user={u} size={size} />
       ))}
       {overflow > 0 && (
         <span
