@@ -406,11 +406,6 @@ export default function FriendProfile() {
                 role="button"
                 tabIndex={0}
                 onClick={() => openPlaceFromRec(r)}
-                onTouchEnd={(e) => {
-                  const tag = (e.target?.tagName || "").toLowerCase();
-                  if (tag === "button" || tag === "a" || e.target?.closest?.("button, a")) return;
-                  openPlaceFromRec(r);
-                }}
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPlaceFromRec(r); } }}
                 className="ios-card"
                 style={{ padding: "14px 16px", cursor: "pointer", WebkitTapHighlightColor: "transparent" }}

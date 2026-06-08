@@ -75,27 +75,18 @@ export default function LovedSection() {
       <SectionHeader
         icon={<Heart size={15} color="#FF6B6B" fill="rgba(255,107,107,0.15)" />}
         title="Loved by your people"
-        seeAllLabel="See all"
-        onSeeAll={() => nav("/loved")}
       />
       <div className="px-4" style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8 }}>
         {items.map((item) => {
           const key = placeKeyOf(item);
           const saved = savedKeys.has(key);
           const handleOpen = () => openPlace(item);
-          const handleTouchEnd = (e) => {
-            const tag = (e.target?.tagName || "").toLowerCase();
-            if (tag === "button" || tag === "a") return;
-            if (e.target?.closest?.("button, a")) return;
-            handleOpen();
-          };
           return (
             <div
               key={item.rec_id}
               role="button"
               tabIndex={0}
               onClick={handleOpen}
-              onTouchEnd={handleTouchEnd}
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleOpen(); } }}
               data-testid={`loved-card-${item.rec_id}`}
               className="ios-card"

@@ -115,8 +115,6 @@ export default function Explore() {
               <SectionHeader
                 icon={<Sparkles size={15} color="#0A84FF" />}
                 title="New from your people"
-                seeAllLabel="See all"
-                onSeeAll={() => nav("/feed")}
                 marginTop={8}
               />
               <div style={{ marginTop: 8 }}>

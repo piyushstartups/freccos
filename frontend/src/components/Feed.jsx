@@ -278,24 +278,16 @@ export default function Feed({ onSwitchToCities, maxItems, hideEmptyHint }) {
 /* -------------- Cards -------------- */
 
 function CardShell({ children, onClick, tonal = false, testId }) {
-  // iOS Safari PWA quirk — `onClick` on a non-button div can occasionally
-  // swallow taps on inner non-interactive children. Add `onTouchEnd` as a
-  // belt-and-braces handler so taps always reach the card-level open action.
-  const handleTouchEnd = (e) => {
-    if (!onClick) return;
-    // Skip if the user tapped on an actual interactive child (the Save button
-    // already calls stopPropagation, but this is the iOS safety net).
-    const tag = (e.target?.tagName || "").toLowerCase();
-    if (tag === "button" || tag === "a") return;
-    if (e.target?.closest?.("button, a")) return;
-    onClick();
-  };
+  // Note — DO NOT add `onTouchEnd` here. iOS/Android both fire a synthetic
+  // `click` after `touchend`; running the open handler in both lands the
+  // follow-up click on the just-mounted backdrop and instantly closes the
+  // sheet ("ghost-click"). `cursor:pointer` is enough for iOS Safari to
+  // dispatch click events on a non-button container.
   return (
     <div
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
-      onTouchEnd={handleTouchEnd}
       onKeyDown={(e) => { if (onClick && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onClick(); } }}
       data-testid={testId}
       className="ios-card"

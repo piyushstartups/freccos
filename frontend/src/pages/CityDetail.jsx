@@ -128,7 +128,7 @@ export default function CityDetail() {
                     {f.city_count} {f.city_count === 1 ? "city" : "cities"} · {f.country_count} {f.country_count === 1 ? "country" : "countries"}
                   </div>
                 ) : (
-                  <div className="t-cap" style={{ color: "#8E8E93" }}>{f.rec_count} {f.rec_count === 1 ? "rec" : "recs"}</div>
+                  <div className="t-cap" style={{ color: "#8E8E93" }}>{f.rec_count} {f.rec_count === 1 ? "recommendation" : "recommendations"}</div>
                 )}
               </Link>
             ))}
