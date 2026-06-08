@@ -24,6 +24,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, EmailStr, Field
 from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.middleware.cors import CORSMiddleware
+import onesignal_client as osn
 
 
 # ----------------------- Config -----------------------
@@ -580,6 +581,12 @@ class UpdateProfileReq(BaseModel):
     profile_photo_url: Optional[str] = None
     is_private: Optional[bool] = None
     instagram_handle: Optional[str] = None
+    timezone: Optional[str] = None              # IANA tz, set by frontend on login
+
+
+class NotificationPrefsReq(BaseModel):
+    preferences: Optional[dict] = None          # partial dict: {pref_key: bool}
+    notifications_seen: Optional[bool] = None
 
 
 class RecCreateReq(BaseModel):
@@ -641,6 +648,9 @@ def public_user(u: dict) -> dict:
         "instagram_handle": u.get("instagram_handle"),
         "blocked": u.get("blocked", []),
         "created_at": u.get("created_at"),
+        "timezone": u.get("timezone"),
+        "notifications_seen": bool(u.get("notifications_seen", False)),
+        "notification_preferences": u.get("notification_preferences") or osn.default_prefs(),
     }
 
 
@@ -770,6 +780,8 @@ async def register(req: RegisterReq, response: Response):
         "followers": followers,
         "auth_provider": "password", "google_id": None,
         "created_at": now_iso,
+        "notification_preferences": osn.default_prefs(),
+        "notifications_seen": False,
     }
     await db.users.insert_one(user)
     # mutual follow when invited
@@ -779,8 +791,9 @@ async def register(req: RegisterReq, response: Response):
         })
         await db.follows.insert_one({"follower_id": user_id, "following_id": referrer["id"], "created_at": now_iso})
         await db.follows.insert_one({"follower_id": referrer["id"], "following_id": user_id, "created_at": now_iso})
-        # Notify referrer that someone joined using their code
+        # In-app notif (legacy) + push (new)
         await create_notification(referrer["id"], "invite_signup", actor_id=user_id)
+        osn.fire(osn.trig_invite_joined(db, {"id": user_id, "name": req.name.strip()}, referrer["id"]))
 
     access = create_access_token(user_id, email)
     refresh = create_refresh_token(user_id)
@@ -1083,6 +1096,7 @@ async def follow_user(user_id: str, user: dict = Depends(current_user)):
     except Exception:
         pass
     await create_notification(user_id, "new_follower", actor_id=user["id"])
+    osn.fire(osn.trig_new_follower(db, {"id": user["id"], "name": user.get("name")}, user_id))
     return {"status": "following"}
 
 
@@ -1130,6 +1144,7 @@ async def accept_request(request_id: str, user: dict = Depends(current_user)):
     # Mark related notification as read
     await db.notifications.update_many({"user_id": user["id"], "kind": "follow_request", "actor_id": rid}, {"$set": {"read": True}})
     await create_notification(rid, "request_accepted", actor_id=user["id"])
+    osn.fire(osn.trig_follow_accepted(db, {"id": user["id"], "name": user.get("name")}, rid))
     return {"ok": True}
 
 
@@ -1641,13 +1656,45 @@ async def create_recommendation(req: RecCreateReq, user: dict = Depends(current_
         "photo_url": req.photo_url, "created_at": iso(now_utc()),
     }
     await db.recommendations.insert_one(rec)
+    # Impact (trigger 9): if this place matches a rec the user previously saved from
+    # someone else, increment inspired_count + fire "you inspired them" to each original
+    # recommender (could be multiple if they saved from 2+ people).
+    try:
+        plan = await db.trip_plans.find_one({"user_id": user["id"], "city_id": city["id"]}, {"_id": 0, "saved_recs": 1})
+        saved_rec_ids = [s["recommendation_id"] for s in (plan or {}).get("saved_recs", [])]
+        if saved_rec_ids:
+            target_key = _place_key(rec)
+            already_inspired_owners = set()
+            async for src in db.recommendations.find({"id": {"$in": saved_rec_ids}}, {"_id": 0}):
+                if _place_key(src) != target_key:
+                    continue
+                if src["user_id"] == user["id"]:
+                    continue
+                if src["user_id"] in already_inspired_owners:
+                    continue
+                already_inspired_owners.add(src["user_id"])
+                if user["id"] in (src.get("inspired_by_users") or []):
+                    continue
+                await db.recommendations.update_one(
+                    {"id": src["id"]},
+                    {"$addToSet": {"inspired_by_users": user["id"]}, "$inc": {"inspired_count": 1}},
+                )
+                osn.fire(osn.trig_your_rec_inspired(
+                    db, {"id": user["id"], "name": user.get("name")},
+                    src["place_name"], city.get("name", ""),
+                    src["user_id"], src["id"],
+                ))
+    except Exception:
+        pass
     # Auto-create a Trip entry for this city if not already present
+    is_first_trip_in_city = False
     try:
         await db.user_trips.insert_one({
             "id": str(uuid.uuid4()),
             "user_id": user["id"], "city_id": city["id"],
             "created_at": iso(now_utc()),
         })
+        is_first_trip_in_city = True
     except Exception:
         pass  # already exists — unique index
     # Notify followers who have this city in their bucket list (saved_recs may be empty)
@@ -1658,6 +1705,30 @@ async def create_recommendation(req: RecCreateReq, user: dict = Depends(current_
                 await create_notification(plan["user_id"], "bucket_recs", actor_id=user["id"], payload={"city_id": city["id"], "city_name": city.get("name")})
     except Exception:
         pass
+
+    # ---------- Push notifications ----------
+    # 1) Count the author's recent recs to detect a 30-min "burst" (triggers 5/6 batch rule).
+    burst_count = 0
+    try:
+        burst_cutoff = iso(now_utc() - timedelta(minutes=30))
+        burst_count = await db.recommendations.count_documents({"user_id": user["id"], "created_at": {"$gte": burst_cutoff}})
+    except Exception:
+        burst_count = 1
+    followers_ids = user.get("followers", []) or []
+    actor_brief = {"id": user["id"], "name": user.get("name")}
+    if followers_ids:
+        # Followers who have this city in their Saved list — trigger 4 (per-rec, dedup'd 30min)
+        async for plan in db.trip_plans.find({"user_id": {"$in": followers_ids}, "city_id": city["id"]}, {"_id": 0, "user_id": 1}).limit(500):
+            osn.fire(osn.trig_rec_in_saved_city(db, actor_brief, city, plan["user_id"]))
+        # Burst (trigger 5/6): only fire when count >= 3, dedup'd 30min per recipient.
+        if burst_count >= 3:
+            for fid in followers_ids:
+                osn.fire(osn.trig_friend_rec_burst(db, actor_brief, burst_count, fid))
+    # 2) New-trip notification — fire once per new (user, city) combo per hour.
+    if is_first_trip_in_city and followers_ids:
+        for fid in followers_ids:
+            osn.fire(osn.trig_friend_new_trip(db, actor_brief, city, fid))
+
     rec.pop("_id", None)
     return {**rec, "city": city}
 
@@ -1930,6 +2001,18 @@ async def save_rec_to_trip(city_id: str, req: SaveRecReq, user: dict = Depends(c
             {"user_id": user["id"], "city_id": city_id},
             {"$push": {"saved_recs": {"recommendation_id": rec["id"], "original_user_id": rec["user_id"]}}}
         )
+    # Impact: increment save_count + saved_by_users on the original rec, fire trigger 7.
+    if rec["user_id"] != user["id"]:
+        await db.recommendations.update_one(
+            {"id": rec["id"]},
+            {"$addToSet": {"saved_by_users": user["id"]}, "$inc": {"save_count": 1}},
+        )
+        city_doc = await db.cities.find_one({"id": city_id}, {"_id": 0, "name": 1})
+        osn.fire(osn.trig_your_rec_saved(
+            db, {"id": user["id"], "name": user.get("name")},
+            rec["place_name"], (city_doc or {}).get("name", ""),
+            rec["user_id"], rec["id"],
+        ))
     return {"ok": True}
 
 
@@ -1968,6 +2051,22 @@ async def check_rec(city_id: str, req: CheckRecReq, user: dict = Depends(current
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Trip plan not found")
+    # Impact (trigger 8): if newly checked AND this rec belongs to another user, count the visit.
+    if req.checked:
+        rec_full = await db.recommendations.find_one({"id": req.recommendation_id}, {"_id": 0})
+        if rec_full and rec_full["user_id"] != user["id"]:
+            already_visited = user["id"] in (rec_full.get("visited_by_users") or [])
+            if not already_visited:
+                await db.recommendations.update_one(
+                    {"id": req.recommendation_id},
+                    {"$addToSet": {"visited_by_users": user["id"]}, "$inc": {"visit_count": 1}},
+                )
+                city_doc = await db.cities.find_one({"id": city_id}, {"_id": 0, "name": 1})
+                osn.fire(osn.trig_your_rec_visited(
+                    db, {"id": user["id"], "name": user.get("name")},
+                    rec_full["place_name"], (city_doc or {}).get("name", ""),
+                    rec_full["user_id"], rec_full["id"],
+                ))
     # If newly checked, prompt user to add their own rec ("Did you love it?")
     prompt = bool(req.checked)
     # Auto-remove the trip plan if every saved rec is now ticked
@@ -1980,6 +2079,135 @@ async def check_rec(city_id: str, req: CheckRecReq, user: dict = Depends(current
             await db.trip_plans.delete_one({"user_id": user["id"], "city_id": city_id})
             auto_removed = True
     return {"ok": True, "prompt_add_to_trips": prompt, "auto_removed": auto_removed}
+
+
+# ----------------------- Notification preferences -----------------------
+
+@api.get("/users/me/notification-prefs")
+async def get_notification_prefs(user: dict = Depends(current_user)):
+    prefs = (user.get("notification_preferences") or osn.default_prefs())
+    # Backfill any missing keys so the UI always renders all toggles
+    for k, v in osn.default_prefs().items():
+        prefs.setdefault(k, v)
+    # Group meta for the settings UI
+    groups = {"social": [], "activity": [], "impact": []}
+    for k, meta in osn.NOTIFICATION_PREFS.items():
+        groups.setdefault(meta["group"], []).append({"key": k, "label": meta["label"]})
+    return {
+        "preferences": prefs,
+        "notifications_seen": bool(user.get("notifications_seen", False)),
+        "timezone": user.get("timezone"),
+        "groups": groups,
+    }
+
+
+@api.patch("/users/me/notification-prefs")
+async def patch_notification_prefs(req: NotificationPrefsReq, user: dict = Depends(current_user)):
+    update: dict = {}
+    if req.preferences:
+        existing = user.get("notification_preferences") or osn.default_prefs()
+        merged = {**existing, **{k: bool(v) for k, v in req.preferences.items() if k in osn.NOTIFICATION_PREFS}}
+        update["notification_preferences"] = merged
+    if req.notifications_seen is not None:
+        update["notifications_seen"] = bool(req.notifications_seen)
+    if update:
+        await db.users.update_one({"id": user["id"]}, {"$set": update})
+    u = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    return public_user(u)
+
+
+# ----------------------- Impact summary -----------------------
+
+@api.get("/me/impact")
+async def my_impact(user: dict = Depends(current_user)):
+    """Returns the user's impact stats for the current calendar month + all time."""
+    user_id = user["id"]
+    # Month boundaries (UTC; client renders the label)
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_label = month_start.strftime("%B %Y")
+
+    pipeline_all = [
+        {"$match": {"user_id": user_id}},
+        {"$group": {
+            "_id": None,
+            "saves": {"$sum": {"$ifNull": ["$save_count", 0]}},
+            "visits": {"$sum": {"$ifNull": ["$visit_count", 0]}},
+            "inspired": {"$sum": {"$ifNull": ["$inspired_count", 0]}},
+        }},
+    ]
+    all_time = {"saves": 0, "visits": 0, "inspired": 0}
+    async for row in db.recommendations.aggregate(pipeline_all):
+        all_time = {"saves": row.get("saves", 0), "visits": row.get("visits", 0), "inspired": row.get("inspired", 0)}
+
+    # Month: we can't easily attribute counters by date, but trip_plans hold the timestamps —
+    # so approximate the month stats by recounting events from source-of-truth collections.
+    month_iso = iso(month_start)
+    # Saves this month: trip_plan documents containing saved_recs whose original_user_id == me,
+    # filtered by saved_recs entries created this month. saved_recs entries don't store a date,
+    # so fall back to plan.created_at as a coarse proxy.
+    saves_month = await db.trip_plans.count_documents({
+        "saved_recs.original_user_id": user_id,
+        "created_at": {"$gte": month_iso},
+    })
+    visits_month = 0
+    async for plan in db.trip_plans.find(
+        {"saved_recs.original_user_id": user_id, "created_at": {"$gte": month_iso}},
+        {"_id": 0, "saved_recs": 1, "checked_recs": 1},
+    ).limit(1000):
+        my_saved_rec_ids = {s["recommendation_id"] for s in plan.get("saved_recs", []) if s.get("original_user_id") == user_id}
+        checked = set(plan.get("checked_recs") or [])
+        visits_month += len(my_saved_rec_ids & checked)
+    # Inspired this month: recs from other users that pointed at the same place as ours,
+    # created this month.
+    my_place_keys = set()
+    async for r in db.recommendations.find({"user_id": user_id}, {"_id": 0, "place_id": 1, "place_name_normalized": 1, "place_name": 1}):
+        my_place_keys.add(r.get("place_id") or f"name::{r.get('place_name_normalized') or slugify(r.get('place_name',''))}")
+    inspired_month = 0
+    if my_place_keys:
+        async for r in db.recommendations.find(
+            {"user_id": {"$ne": user_id}, "created_at": {"$gte": month_iso}},
+            {"_id": 0, "place_id": 1, "place_name_normalized": 1, "place_name": 1},
+        ).limit(2000):
+            k = r.get("place_id") or f"name::{r.get('place_name_normalized') or slugify(r.get('place_name',''))}"
+            if k in my_place_keys:
+                inspired_month += 1
+
+    current_month = {"saves": saves_month, "visits": visits_month, "inspired": inspired_month}
+
+    # Most-loved rec — highest save_count overall
+    most_loved = None
+    async for r in db.recommendations.find({"user_id": user_id}, {"_id": 0}).sort("save_count", -1).limit(1):
+        if (r.get("save_count") or 0) > 0:
+            c = await db.cities.find_one({"id": r["city_id"]}, {"_id": 0, "name": 1, "flag_emoji": 1})
+            most_loved = {
+                "place_name": r["place_name"],
+                "city_name": (c or {}).get("name", ""),
+                "flag_emoji": (c or {}).get("flag_emoji", ""),
+                "save_count": r.get("save_count", 0),
+                "visit_count": r.get("visit_count", 0),
+            }
+
+    visible = all_time["saves"] > 0 or all_time["visits"] > 0 or all_time["inspired"] > 0
+    return {
+        "visible": visible,
+        "month_label": month_label,
+        "follower_count": len(user.get("followers", []) or []),
+        "current_month": current_month,
+        "all_time": all_time,
+        "most_loved": most_loved,
+    }
+
+
+# Deep-link helper used by push notifications — opens the rec's primary place card.
+@api.get("/r/{rec_id}")
+async def deep_link_rec(rec_id: str):
+    """Resolves a rec id → /city/<cityId>?rec=<id> for the SPA. Plain JSON for the
+    frontend to honour as the destination URL."""
+    rec = await db.recommendations.find_one({"id": rec_id}, {"_id": 0, "id": 1, "city_id": 1})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+    return {"rec_id": rec["id"], "city_id": rec["city_id"]}
 
 
 # ----------------------- Google Places proxy -----------------------

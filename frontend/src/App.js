@@ -22,6 +22,7 @@ import Notifications from "./pages/Notifications";
 import FollowList from "./pages/FollowList";
 import BlockedAccounts from "./pages/BlockedAccounts";
 import LegalPage from "./pages/LegalPage";
+import NotificationSettings from "./pages/NotificationSettings";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -94,6 +95,7 @@ function AppRoutes() {
         <Route path="/trips/:cityId" element={<TripDetail />} />
         <Route path="/me" element={<MyProfile />} />
         <Route path="/me/blocked" element={<BlockedAccounts />} />
+        <Route path="/me/notifications" element={<NotificationSettings />} />
         <Route path="/notifications" element={<Notifications />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -40,4 +40,8 @@ export const Events = {
   RECOMMENDATION_SAVED: "recommendation_saved",
   BUCKET_LIST_CITY_ADDED: "bucket_list_city_added",
   TRIP_PLAN_CREATED: "trip_plan_created",
+  // Notifications
+  NOTIFICATIONS_PERMISSION_REQUESTED: "notifications_permission_requested",
+  NOTIFICATIONS_BANNER_DISMISSED: "notifications_banner_dismissed",
+  NOTIFICATIONS_PREFS_CHANGED: "notifications_prefs_changed",
 };

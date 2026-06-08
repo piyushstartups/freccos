@@ -1,11 +1,16 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import api from "./api";
+import {
+  initOneSignal, loginOneSignal, logoutOneSignal, setOneSignalTags,
+} from "./onesignal";
 
 const AuthCtx = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);   // null while loading, false if not authed
   const [loading, setLoading] = useState(true);
+  const initedRef = useRef(false);
+  const lastTaggedRef = useRef(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -26,6 +31,44 @@ export function AuthProvider({ children }) {
     }
     refresh();
   }, [refresh]);
+
+  // Initialize OneSignal exactly once (queues if SDK script hasn't loaded yet).
+  useEffect(() => {
+    if (initedRef.current) return;
+    initedRef.current = true;
+    initOneSignal();
+  }, []);
+
+  // Identify + tag the user on every successful /me load (and clear on logout).
+  useEffect(() => {
+    if (user && user.id) {
+      loginOneSignal(user.id).catch(() => {});
+      // Auto-detect the user's IANA timezone client-side; backend uses it for quiet hours.
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (tz && tz !== user.timezone) {
+          api.patch("/users/me", { timezone: tz }).catch(() => {});
+        }
+      } catch { /* noop */ }
+      // Send basic tags (debounced via lastTaggedRef so we don't spam on every refresh)
+      const sig = `${user.id}:${user.recommendations_count || 0}:${user.followers_count || 0}`;
+      if (lastTaggedRef.current !== sig) {
+        lastTaggedRef.current = sig;
+        setOneSignalTags({
+          userId: user.id,
+          joinDate: user.created_at,
+          recCount: user.recommendations_count || 0,
+          cityCount: user.cities_count || 0,
+          followerCount: user.followers_count || 0,
+          lastActive: new Date().toISOString(),
+          impactScore: user.impact_score || 0,
+        }).catch(() => {});
+      }
+    } else if (user === false) {
+      logoutOneSignal().catch(() => {});
+      lastTaggedRef.current = null;
+    }
+  }, [user]);
 
   const login = async (email, password) => {
     const { data } = await api.post("/auth/login", { email, password });

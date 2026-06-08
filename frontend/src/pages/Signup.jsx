@@ -5,6 +5,7 @@ import { useAuth } from "../lib/auth";
 import Wordmark from "../components/Wordmark";
 import { Check, Loader2, Camera, ArrowLeft } from "lucide-react";
 import { track, Events } from "../lib/analytics";
+import EnableNotificationsCard from "../components/EnableNotificationsCard";
 
 export default function Signup() {
   const nav = useNavigate();
@@ -88,11 +89,13 @@ export default function Signup() {
           setUser(data);
         }
       }
-      nav("/explore", { replace: true });
+      setStep(4);
     } catch (e) {
       setErr(formatApiErrorDetail(e.response?.data?.detail) || e.message);
     } finally { setBusy(false); }
   };
+
+  const finishOnboarding = () => nav("/explore", { replace: true });
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
@@ -103,9 +106,9 @@ export default function Signup() {
           <Wordmark size={34} color="#fff" />
         </div>
         <h1 className="t-title1 mt-3" style={{ color: "#fff" }}>Join your friends on Freccos</h1>
-        <p className="t-cap" style={{ color: "#8E8E93" }}>Step {step} of 3</p>
+        <p className="t-cap" style={{ color: "#8E8E93" }}>Step {step} of 4</p>
         <div style={{ display: "flex", gap: 4, justifyContent: "center", marginTop: 10 }}>
-          {[1, 2, 3].map((i) => (
+          {[1, 2, 3, 4].map((i) => (
             <div key={i} style={{
               width: 28, height: 4, borderRadius: 2,
               background: i <= step ? "#0A84FF" : "rgba(255,255,255,0.15)",
@@ -264,6 +267,16 @@ export default function Signup() {
               Done
             </button>
           </div>
+        </div>
+      )}
+
+      {step === 4 && (
+        <div className="fade-in" style={{ flex: 1 }}>
+          <EnableNotificationsCard
+            variant="onboarding"
+            onEnabled={finishOnboarding}
+            onSkip={finishOnboarding}
+          />
         </div>
       )}
     </div>

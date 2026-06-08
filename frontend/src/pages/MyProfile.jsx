@@ -9,12 +9,13 @@ import AddTripSheet from "../components/AddTripSheet";
 import ConfirmDialog from "../components/ConfirmDialog";
 import PlaceSheet from "../components/PlaceSheet";
 import Wordmark from "../components/Wordmark";
+import ImpactSummaryCard from "../components/ImpactSummaryCard";
 import { track, Events } from "../lib/analytics";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
 import { flagForCountry } from "../lib/flags";
 import {
   Settings, Share2, LogOut, Pencil, Trash2, ChevronLeft, ChevronRight, Plus, Map, MoreHorizontal,
-  Download, Instagram, Shield, Lock,
+  Download, Instagram, Shield, Lock, Bell,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatMonthYear, photoUrl } from "../lib/utils-frec";
@@ -172,6 +173,7 @@ export default function MyProfile() {
 
       {!openCityId && (
         <>
+          <ImpactSummaryCard />
           <div className="px-4 pt-4 flex items-center justify-between">
             <h2 className="t-title2">Trips</h2>
             <button data-testid="me-add-trip" onClick={() => setAddTripOpen(true)} className="btn-pill"
@@ -586,6 +588,7 @@ function PhotoCollage({ photos }) {
 }
 
 function SettingsSheet({ open, onClose, user, onUpdated, onLogout, onBlocked }) {
+  const nav = useNavigate();
   const [view, setView] = useState("main"); // main | edit
   const [name, setName] = useState(user?.name || "");
   const [bio, setBio] = useState(user?.bio || "");
@@ -644,6 +647,14 @@ function SettingsSheet({ open, onClose, user, onUpdated, onLogout, onBlocked }) 
             </div>
             <button data-testid="settings-blocked" className="list-row w-full text-left ios-card" onClick={onBlocked} style={{ border: "none" }}>
               <Shield size={16} /> <span style={{ flex: 1 }}>Blocked accounts</span> <span className="muted">›</span>
+            </button>
+            <button
+              data-testid="settings-notifications"
+              className="list-row w-full text-left ios-card"
+              onClick={() => { onClose?.(); nav("/me/notifications"); }}
+              style={{ border: "none" }}
+            >
+              <Bell size={16} /> <span style={{ flex: 1 }}>Notifications</span> <span className="muted">›</span>
             </button>
             <button
               data-testid="settings-install"

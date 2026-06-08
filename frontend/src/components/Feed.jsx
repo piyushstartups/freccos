@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { formatRelativeTime, photoUrl } from "../lib/utils-frec";
 import { useAuth } from "../lib/auth";
 import { track, Events } from "../lib/analytics";
+import NotificationsBanner from "./NotificationsBanner";
 
 const PAGE_FIRST = 20;
 const PAGE_MORE = 10;
@@ -228,6 +229,8 @@ export default function Feed({ onSwitchToCities }) {
           {refreshing ? "Refreshing…" : pullY > 50 ? "Release to refresh" : "Pull to refresh"}
         </div>
       )}
+
+      <NotificationsBanner />
 
       <div className="px-4" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {items.map((item) => {
