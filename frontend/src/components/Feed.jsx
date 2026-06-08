@@ -19,7 +19,7 @@ function placeKeyOf(item) {
   return item.place_id || `name::${(item.place_name || "").toLowerCase().trim()}`;
 }
 
-export default function Feed({ onSwitchToCities }) {
+export default function Feed({ onSwitchToCities, maxItems, hideEmptyHint }) {
   const nav = useNavigate();
   const { user } = useAuth();
   const [items, setItems] = useState(null); // null = initial loading
@@ -193,17 +193,25 @@ export default function Feed({ onSwitchToCities }) {
   if (items === null) return <FeedSkeleton />;
 
   if (items.length === 0 && (!user?.following || user.following.length === 0)) {
+    if (hideEmptyHint) return null;
     return (
       <EmptyState
         testId="feed-empty-no-follows"
-        title="Nothing here yet"
-        message="Follow people to see their recommendations."
-        ctaLabel="Find people to follow →"
+        title="Follow your friends to see the places they love."
+        message=""
+        ctaLabel="Find friends →"
         onCta={() => nav("/people")}
       />
     );
   }
   if (items.length === 0) {
+    if (hideEmptyHint) {
+      return (
+        <p className="px-4 t-sub muted" data-testid="feed-quiet-hint" style={{ textAlign: "center", padding: "8px 0" }}>
+          All caught up. Your people haven&apos;t added anything recently.
+        </p>
+      );
+    }
     return (
       <EmptyState
         testId="feed-empty-quiet"
@@ -214,6 +222,8 @@ export default function Feed({ onSwitchToCities }) {
       />
     );
   }
+
+  const displayedItems = typeof maxItems === "number" ? items.slice(0, maxItems) : items;
 
   return (
     <div
@@ -233,7 +243,7 @@ export default function Feed({ onSwitchToCities }) {
       <NotificationsBanner />
 
       <div className="px-4" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {items.map((item) => {
+        {displayedItems.map((item) => {
           if (item.type === "new_rec") {
             const key = placeKeyOf(item);
             return <NewRecCard key={item.id} item={item} saved={savedKeys.has(key)} onOpen={() => openPlace(item)} onSave={(e) => inlineSave(item, e)} />;
@@ -243,13 +253,15 @@ export default function Feed({ onSwitchToCities }) {
           return null;
         })}
 
-        {loadingMore && <FeedSkeletonCard />}
-        {!hasMore && items.length > 5 && (
+        {/* Hide loading skeleton + 'all caught up' line when we're rendering inside the
+            multi-section Explore Feed — the parent owns spacing in that mode. */}
+        {!maxItems && loadingMore && <FeedSkeletonCard />}
+        {!maxItems && !hasMore && items.length > 5 && (
           <div style={{ textAlign: "center", color: "#8E8E93", fontSize: 12, padding: "12px 0 24px" }}>
-            You're all caught up.
+            You&apos;re all caught up.
           </div>
         )}
-        <div ref={sentinelRef} style={{ height: 1 }} />
+        {!maxItems && <div ref={sentinelRef} style={{ height: 1 }} />}
       </div>
 
       <PlaceSheet

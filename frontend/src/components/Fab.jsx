@@ -1,7 +1,10 @@
 import React, { useState } from "react";
-import { Plus, MapPin, Map, Bookmark, X } from "lucide-react";
+import { Plus, MapPin, Map, X } from "lucide-react";
 
-export default function Fab({ onAddRec, onAddTrip, onAddBucket }) {
+// FAB with exactly two speed-dial options: Add a recommendation and Add a trip.
+// Bucket-list entry-point has been removed per the latest spec — recs and trips
+// are the only first-class create actions.
+export default function Fab({ onAddRec, onAddTrip }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -38,14 +41,6 @@ export default function Fab({ onAddRec, onAddTrip, onAddBucket }) {
           >
             <Map size={18} color="#BF5AF2" />
             Add a trip
-          </button>
-          <button
-            data-testid="fab-add-bucket"
-            className="speed-item"
-            onClick={() => { setOpen(false); onAddBucket?.(); }}
-          >
-            <Bookmark size={18} color="#0A84FF" />
-            Add to saved
           </button>
         </div>
       )}

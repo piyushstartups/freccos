@@ -252,7 +252,7 @@ export default function FriendProfile() {
           style={{ display: "flex", alignItems: "baseline", gap: 18, marginTop: 14, flexWrap: "wrap" }}
           data-testid="profile-stats-row"
         >
-          <Stat n={profile.city_count} label={profile.city_count === 1 ? "Place" : "Places"} testId="stat-cities" />
+          <Stat n={profile.city_count} label={profile.city_count === 1 ? "Recommendation" : "Recommendations"} testId="stat-cities" />
           <Stat n={profile.country_count} label={profile.country_count === 1 ? "Country" : "Countries"} testId="stat-countries" />
           <Stat n={followers} label={followers === 1 ? "Follower" : "Followers"}
                 onClick={() => profile.can_view && nav(`/user/${userId}/followers`)}

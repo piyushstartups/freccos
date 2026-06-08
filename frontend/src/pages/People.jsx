@@ -79,7 +79,7 @@ export default function People() {
     <div className="pb-32 fade-in" data-testid="people-page">
       <div className="app-header" style={{ background: "#1C1C1E", color: "#fff", padding: "28px 16px 18px" }}>
         <h1 style={{ color: "#fff", fontSize: 28, fontWeight: 700, letterSpacing: "-0.4px", lineHeight: 1.15, margin: 0 }}>People</h1>
-        <p style={{ color: "#8E8E93", fontSize: 14, lineHeight: 1.3, margin: "6px 0 0" }}>Discover travellers worth following.</p>
+        <p style={{ color: "#8E8E93", fontSize: 14, lineHeight: 1.3, margin: "6px 0 0" }}>Find your friends on Freccos.</p>
       </div>
 
       <div className="px-4 py-3" style={{ position: "sticky", top: 0, background: "#F2F2F7", zIndex: 5 }}>

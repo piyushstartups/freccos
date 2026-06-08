@@ -27,7 +27,7 @@ export default function TripPlans() {
           <Bookmark size={36} color="#C7C7CC" />
           <h3 className="t-title2 mt-3">Nothing saved yet</h3>
           <p className="t-sub muted mt-1">
-            Explore a city and save recommendations from your people.
+            Save places from your friends recommendations to visit on your next trip.
           </p>
           <Link to="/explore" className="btn-pill btn-primary inline-flex mt-4">
             Explore →

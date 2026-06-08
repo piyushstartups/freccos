@@ -1450,6 +1450,60 @@ def _normalize_place_name(name: str) -> str:
     return "".join(ch for ch in name.lower().strip() if ch.isalnum() or ch.isspace()).strip()
 
 
+@api.get("/feed/loved")
+async def feed_loved(limit: int = 5, days: int = 7, user: dict = Depends(current_user)):
+    """Top-saved recommendations across the user's network in the past <days>.
+    Sorted by save_count descending. Used for the Explore Feed's
+    'Loved by your people' section."""
+    following_ids = user.get("following", []) or []
+    if not following_ids:
+        return []
+    cutoff_iso = iso(now_utc() - timedelta(days=max(1, days)))
+    cursor = db.recommendations.find(
+        {
+            "user_id": {"$in": following_ids},
+            "save_count": {"$gt": 0},
+            "created_at": {"$gte": cutoff_iso},
+        },
+        {"_id": 0},
+    ).sort("save_count", -1).limit(max(1, min(limit, 25)))
+    recs = await cursor.to_list(length=limit)
+    if not recs:
+        return []
+    # Hydrate authors + cities
+    user_ids = list({r["user_id"] for r in recs})
+    city_ids = list({r["city_id"] for r in recs})
+    users_by_id = {u["id"]: public_user_brief(u) async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "password_hash": 0})}
+    cities_by_id = {c["id"]: c async for c in db.cities.find({"id": {"$in": city_ids}}, {"_id": 0})}
+    # Determine which the current user has already saved
+    saved_place_keys: set = set()
+    saved_rec_ids: set = set()
+    async for plan in db.trip_plans.find({"user_id": user["id"]}, {"_id": 0, "saved_recs": 1}):
+        for s in plan.get("saved_recs", []) or []:
+            saved_rec_ids.add(s["recommendation_id"])
+    if saved_rec_ids:
+        async for r in db.recommendations.find({"id": {"$in": list(saved_rec_ids)}}, {"_id": 0}):
+            saved_place_keys.add(_place_key(r))
+    out = []
+    for r in recs:
+        city = cities_by_id.get(r["city_id"]) or {}
+        key = _place_key(r)
+        out.append({
+            "rec_id": r["id"],
+            "place_name": r["place_name"],
+            "place_id": r.get("place_id"),
+            "category": r.get("category"),
+            "note": r.get("note"),
+            "photo_url": r.get("photo_url"),
+            "save_count": r.get("save_count", 0),
+            "city": {"id": city.get("id"), "name": city.get("name"), "country": city.get("country"), "flag_emoji": city.get("flag_emoji")},
+            "user": users_by_id.get(r["user_id"]),
+            "is_saved": key in saved_place_keys,
+            "created_at": r.get("created_at"),
+        })
+    return out
+
+
 @api.get("/feed")
 async def feed(
     limit: int = 20,

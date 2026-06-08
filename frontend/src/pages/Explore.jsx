@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../lib/api";
-import StackedAvatars from "../components/StackedAvatars";
 import Wordmark from "../components/Wordmark";
 import Feed from "../components/Feed";
-import { Search, Bell } from "lucide-react";
-import { track, Events } from "../lib/analytics";
+import LovedSection, { SectionHeader } from "../components/LovedSection";
+import ExploreCitiesPreview, { CityCard } from "../components/ExploreCitiesPreview";
+import { Search, Bell, Sparkles } from "lucide-react";
+import { useAuth } from "../lib/auth";
 
 const SUBTABS = [
   { id: "feed", label: "Feed" },
@@ -13,6 +14,7 @@ const SUBTABS = [
 ];
 
 export default function Explore() {
+  const { user } = useAuth();
   const [cities, setCities] = useState(null);
   const [q, setQ] = useState("");
   const [unread, setUnread] = useState(0);
@@ -27,7 +29,7 @@ export default function Explore() {
 
   useEffect(() => {
     if (subtab !== "cities") return;
-    if (cities !== null) return; // already loaded
+    if (cities !== null) return;
     (async () => {
       try { const { data } = await api.get("/explore/cities"); setCities(data); }
       catch { setCities([]); }
@@ -35,8 +37,11 @@ export default function Explore() {
   }, [subtab, cities]);
 
   useEffect(() => {
-    api.get("/users/me/notifications/unread-count").then(({ data }) => setUnread(data.count || 0)).catch(() => {});
+    api.get("/users/me/notifications/unread-count")
+      .then(({ data }) => setUnread(data.count || 0)).catch(() => {});
   }, []);
+
+  const followingNone = !user || (user.following || []).length === 0;
 
   const filtered = cities?.filter((c) =>
     !q ? true : c.name.toLowerCase().includes(q.toLowerCase()) ||
@@ -54,7 +59,7 @@ export default function Explore() {
           aria-label="Notifications"
         >
           <Bell size={22} strokeWidth={1.8} />
-          {unread > 0 && <span style={{ position: "absolute", top: 10, right: 10, width: 9, height: 9, background: "#FF453A", borderRadius: 5, border: "2px solid #1C1C1E" }} />}
+          <NotifBadge count={unread} />
         </button>
         <div style={{ paddingTop: 4 }}>
           <Wordmark size={44} color="#fff" />
@@ -75,9 +80,7 @@ export default function Explore() {
               data-testid={`subtab-${t.id}`}
               className="btn-pill"
               style={{
-                padding: "6px 14px",
-                fontSize: 13,
-                fontWeight: 600,
+                padding: "6px 14px", fontSize: 13, fontWeight: 600,
                 background: active ? "#0A84FF" : "transparent",
                 color: active ? "#fff" : "#8E8E93",
                 border: active ? "1px solid #0A84FF" : "1px solid #E5E5EA",
@@ -90,112 +93,94 @@ export default function Explore() {
       </div>
 
       {subtab === "feed" && (
-        <div className="pt-3" data-testid="explore-feed">
-          <Feed onSwitchToCities={() => setSubtab("cities")} />
+        <div className="pt-2" data-testid="explore-feed">
+          {/* Empty state: not following anyone — show only the cities discover section */}
+          {followingNone ? (
+            <>
+              <div className="px-6" style={{ marginTop: 28, textAlign: "center" }} data-testid="feed-empty-no-follows">
+                <h3 className="t-title2" style={{ fontSize: 18 }}>Follow your friends to see the places they love.</h3>
+                <button
+                  onClick={() => nav("/people")}
+                  className="btn-pill btn-primary mt-4"
+                  style={{ padding: "10px 18px" }}
+                >
+                  Find friends
+                </button>
+              </div>
+              <ExploreCitiesPreview onSeeAll={() => setSubtab("cities")} />
+            </>
+          ) : (
+            <>
+              {/* Section 1: chronological feed (limited to 10 items) */}
+              <SectionHeader
+                icon={<Sparkles size={15} color="#0A84FF" />}
+                title="New from your people"
+                seeAllLabel="See all"
+                onSeeAll={() => nav("/feed")}
+                marginTop={8}
+              />
+              <div style={{ marginTop: 8 }}>
+                <Feed onSwitchToCities={() => setSubtab("cities")} maxItems={10} hideEmptyHint />
+              </div>
+              {/* Section 2 */}
+              <LovedSection />
+              {/* Section 3 */}
+              <ExploreCitiesPreview onSeeAll={() => setSubtab("cities")} />
+            </>
+          )}
         </div>
       )}
 
       {subtab === "cities" && (
         <>
-      <div className="px-4 pt-4 pb-3" style={{ position: "sticky", top: 0, background: "#F2F2F7", zIndex: 5 }}>
-        <div style={{ position: "relative" }}>
-          <Search size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#8E8E93" }} />
-          <input data-testid="explore-search" className="ios-input" placeholder="Search a city..."
-            value={q} onChange={(e) => setQ(e.target.value)} style={{ paddingLeft: 36, background: "#fff" }} />
-        </div>
-      </div>
-
-      {cities === null && <div className="px-4 t-sub muted">Loading...</div>}
-      {cities && cities.length === 0 && (
-        <div className="px-6 mt-10" data-testid="explore-empty">
-          <h3 className="t-title2">No recommendations yet</h3>
-          <p className="t-sub muted mt-1">Follow some people to see their recommendations here. Find them in the People tab.</p>
-          <Link to="/people" className="btn-pill btn-primary inline-flex mt-4">Find people</Link>
-        </div>
-      )}
-
-      {cities && cities.length > 0 && (
-        <>
-          <div
-            className="px-4"
-            style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 4, marginBottom: 10 }}
-          >
-            <h2
-              style={{
-                color: "#1C1C1E",
-                fontSize: 13,
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: 0.6,
-                margin: 0,
-              }}
-            >
-              Cities your people have been to
-            </h2>
-            <span style={{ color: "#8E8E93", fontSize: 12 }}>
-              {filtered?.length || 0}
-            </span>
+          <div className="px-4 pt-4 pb-1">
+            <p className="t-sub muted" style={{ fontSize: 13, marginBottom: 10 }}>
+              Explore recommendations in the cities your people have been to.
+            </p>
+            <div style={{ position: "relative" }}>
+              <Search size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#8E8E93" }} />
+              <input data-testid="explore-search" className="ios-input" placeholder="Where do you want to go?"
+                value={q} onChange={(e) => setQ(e.target.value)} style={{ paddingLeft: 36, background: "#fff" }} />
+            </div>
           </div>
 
-          <div className="px-4 grid grid-cols-2 gap-3" data-testid="explore-grid">
-            {filtered.map((c) => {
-              const isNew = c.last_rec_at && (Date.now() - new Date(c.last_rec_at).getTime() < 7 * 86400000);
-              return (
-                <Link
-                  key={c.id}
-                  to={`/city/${c.id}`}
-                  data-testid={`city-card-${c.id}`}
-                  onClick={() => track(Events.CITY_EXPLORED, { city_name: c.name, country: c.country })}
-                  className="ios-card"
-                  style={{
-                    padding: "14px 14px 12px",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 4,
-                    textDecoration: "none",
-                    color: "#1C1C1E",
-                    position: "relative",
-                    minHeight: 112,
-                  }}
-                >
-                  {isNew && (
-                    <span
-                      className="t-label"
-                      style={{ position: "absolute", top: 10, left: 10, background: "#0A84FF", color: "#fff", padding: "2px 8px", borderRadius: 9999, fontSize: 10 }}
-                    >
-                      NEW
-                    </span>
-                  )}
-                  {/* Flag pinned to top-right — minimal, decorative anchor */}
-                  <span
-                    aria-hidden
-                    style={{
-                      position: "absolute",
-                      top: 12,
-                      right: 12,
-                      fontSize: 22,
-                      lineHeight: 1,
-                      opacity: 0.95,
-                    }}
-                  >
-                    {c.flag_emoji}
-                  </span>
-                  <div className="t-title3" style={{ paddingRight: 32, marginTop: "auto" }}>
-                    {c.name}
-                  </div>
-                  <div className="t-cap muted">{c.country}</div>
-                  <div className="flex items-center gap-2 mt-2">
-                    <StackedAvatars users={c.friends || []} size={22} />
-                    <span className="t-cap muted">{c.friend_count} {c.friend_count === 1 ? "person" : "people"}</span>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </>
-      )}
+          {cities === null && <div className="px-4 t-sub muted mt-3">Loading...</div>}
+          {cities && cities.length === 0 && (
+            <div className="px-6 mt-10" data-testid="explore-empty">
+              <h3 className="t-title2">No recommendations yet</h3>
+              <p className="t-sub muted mt-1">Follow your friends to see the places they love.</p>
+              <Link to="/people" className="btn-pill btn-primary inline-flex mt-4">Find friends</Link>
+            </div>
+          )}
+
+          {cities && cities.length > 0 && (
+            <div className="px-4 grid grid-cols-2 gap-3 mt-3" data-testid="explore-grid">
+              {filtered.map((c) => <CityCard key={c.id} city={c} />)}
+            </div>
+          )}
         </>
       )}
     </div>
+  );
+}
+
+function NotifBadge({ count }) {
+  if (!count || count <= 0) return null;
+  const label = count > 9 ? "9+" : String(count);
+  return (
+    <span
+      data-testid="explore-bell-badge"
+      aria-label={`${count} unread notifications`}
+      style={{
+        position: "absolute", top: 4, right: 4,
+        minWidth: 18, height: 18, padding: "0 5px",
+        background: "#FF453A", color: "#fff",
+        border: "2px solid #1C1C1E", borderRadius: 9999,
+        fontSize: 10, fontWeight: 700, lineHeight: "14px",
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+      }}
+    >
+      {label}
+    </span>
   );
 }

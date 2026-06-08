@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import api from "../lib/api";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
 import Avatar from "../components/Avatar";
@@ -12,6 +12,7 @@ import AddRecommendationSheet from "../components/AddRecommendationSheet";
 
 export default function CityDetail() {
   const { cityId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [city, setCity] = useState(null);
   const [friends, setFriends] = useState([]);
   const [recs, setRecs] = useState([]);
@@ -36,6 +37,21 @@ export default function CityDetail() {
   useEffect(() => {
     loadCity(); loadFriends(); loadRecs("all"); // eslint-disable-next-line
   }, [cityId]);
+
+  // Deep-link from a notification — `?rec=<id>` auto-opens the matching place card
+  // as soon as the rec list arrives. We strip the param afterwards so a back/forward
+  // navigation doesn't re-open the sheet repeatedly.
+  useEffect(() => {
+    const target = searchParams.get("rec");
+    if (!target || !recs?.length || placeGroup) return;
+    const group = recs.find((g) => g.primary_rec_id === target || (g.contributors || []).some((c) => c.id === target));
+    if (group) {
+      setPlaceGroup(group);
+      const next = new URLSearchParams(searchParams);
+      next.delete("rec");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, recs, placeGroup, setSearchParams]);
 
   const onCatChange = (c) => { setCategory(c); loadRecs(c); };
 
