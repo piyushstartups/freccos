@@ -171,12 +171,38 @@ export async function setOptIn(value) {
   });
 }
 
-// Called after every successful Freccos login — pushes the current
-// subscription id to the backend (if we already have one) and attaches the
-// change listener so future changes auto-sync.
+// Called after every successful Freccos login.
+//
+// Three responsibilities:
+//  1. Attach a 'change' listener so future subscription updates auto-sync.
+//  2. RECOVERY PATH — if the browser already has `Notification.permission`
+//     granted but OneSignal never registered a subscription (this happens for
+//     users who allowed notifications before the OneSignal SDK was deployed,
+//     so the dashboard shows "Never Subscribed - No Push Token"), silently
+//     call `PushSubscription.optIn()` to register the existing browser permission.
+//     Zero user interaction — fully transparent.
+//  3. POST the resulting subscription id to the Freccos backend.
 export function syncSubscriptionWithBackend() {
   return withOneSignal(async (OneSignal) => {
     await _attachSubscriptionListener(OneSignal);
+
+    // Silent recovery: browser is granted but OneSignal isn't opted-in yet
+    try {
+      const browserGranted = typeof Notification !== "undefined" && Notification.permission === "granted";
+      const sub = OneSignal.User?.PushSubscription;
+      const onesignalOptedIn = !!sub?.optedIn;
+      const onesignalHasId = !!sub?.id;
+      if (browserGranted && !onesignalOptedIn && !onesignalHasId) {
+        try {
+          await OneSignal.User.PushSubscription.optIn();
+        } catch (e) {
+          // optIn can throw if the SDK doesn't yet have a service-worker registration;
+          // the 'change' listener will pick the id up moments later anyway.
+          console.warn("[OneSignal] silent optIn failed:", e); // eslint-disable-line no-console
+        }
+      }
+    } catch { /* ignore */ }
+
     await _captureSubscription(OneSignal);
   });
 }
