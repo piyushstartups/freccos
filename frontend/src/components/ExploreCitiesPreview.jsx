@@ -65,9 +65,11 @@ export function CityCard({ city, testId }) {
           {city.country}
         </div>
       </div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
-        <StackedAvatars users={(city.friends || []).slice(0, 3)} size={18} />
-        <span style={{ color: "#0A84FF", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
+        {(city.friends || []).length > 0 && (
+          <StackedAvatars users={(city.friends || []).slice(0, 3)} size={18} />
+        )}
+        <span style={{ color: "#0A84FF", fontSize: 12, fontWeight: 700 }}>
           {city.rec_count} {city.rec_count === 1 ? "recommendation" : "recommendations"}
         </span>
       </div>

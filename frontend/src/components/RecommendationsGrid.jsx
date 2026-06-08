@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import api from "../lib/api";
 import PlaceSheet from "./PlaceSheet";
-import { Bookmark, MapPin, Plus } from "lucide-react";
+import { Bookmark, MapPin, Plus, Check } from "lucide-react";
 import { formatMonthYear, photoUrl } from "../lib/utils-frec";
 
 // iOS-Photos-style 3-column square grid of a user's recommendations.
@@ -16,18 +15,29 @@ const CATEGORY_TINTS = {
   default: { bg: "#F2F2F7", color: "#3a3a3c" },
 };
 
-export default function RecommendationsGrid({ userId, isSelf, onAddRec }) {
+/**
+ * Props:
+ *  - userId: who's recs we're showing
+ *  - isSelf: viewer is the owner (controls empty-state CTA + add button)
+ *  - profileUser: { id, name, profile_photo_url } — used to populate PlaceSheet
+ *      contributor info so the rich card shows attribution correctly.
+ *  - onAddRec: invoked from empty-state CTA
+ *  - hideHeader: hide the inner count header (parent tab already shows count)
+ */
+export default function RecommendationsGrid({ userId, isSelf, profileUser, onAddRec, hideHeader, onCount }) {
   const [recs, setRecs] = useState(null);
   const [placeOpen, setPlaceOpen] = useState(null);
-  const nav = useNavigate();
 
   const load = async () => {
     try {
       const { data } = await api.get(`/users/${userId}/recommendations`, { params: { limit: 200 } });
-      setRecs(data || []);
-    } catch { setRecs([]); }
+      const list = data || [];
+      setRecs(list);
+      onCount?.(list.length);
+    } catch { setRecs([]); onCount?.(0); }
   };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [userId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [userId]);
 
   if (recs === null) return <div className="p-6 t-sub muted">Loading...</div>;
 
@@ -63,6 +73,8 @@ export default function RecommendationsGrid({ userId, isSelf, onAddRec }) {
     );
   }
 
+  const contribUser = profileUser || { id: userId };
+
   const openPlace = (rec) => {
     setPlaceOpen({
       cityId: rec.city_id,
@@ -73,23 +85,25 @@ export default function RecommendationsGrid({ userId, isSelf, onAddRec }) {
         place_address: rec.place_address,
         category: rec.category,
         photo_url: rec.photo_url,
-        is_saved: false,
+        is_saved: !!rec.is_saved_by_me,
         primary_rec_id: rec.id,
-        contributors: [{ ...rec, user: { id: userId } }],
+        contributors: [{ ...rec, user: contribUser }],
       },
     });
   };
 
   return (
     <div data-testid="recs-grid">
-      <div className="px-4 pt-4 pb-2">
-        <h2 className="t-title2" data-testid="recs-grid-header">
-          {recs.length} {recs.length === 1 ? "recommendation" : "recommendations"}
-        </h2>
-      </div>
+      {!hideHeader && (
+        <div className="px-4 pt-4 pb-2">
+          <h2 className="t-title2" data-testid="recs-grid-header">
+            {recs.length} {recs.length === 1 ? "recommendation" : "recommendations"}
+          </h2>
+        </div>
+      )}
       <div
         style={{
-          display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4,
+          display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 2,
           padding: "0 8px",
         }}
       >
@@ -120,7 +134,7 @@ function GridCell({ rec, onOpen }) {
       data-testid={`recs-grid-cell-${rec.id}`}
       style={{
         position: "relative", aspectRatio: "1 / 1", overflow: "hidden",
-        borderRadius: 8, border: "none", padding: 0, cursor: "pointer",
+        border: "none", padding: 0, cursor: "pointer",
         background: hasPhoto ? "#000" : tint.bg,
         WebkitTapHighlightColor: "transparent",
       }}
@@ -129,6 +143,8 @@ function GridCell({ rec, onOpen }) {
         <img
           src={photoUrl(rec.photo_url)}
           alt={rec.place_name}
+          loading="lazy"
+          decoding="async"
           style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
         />
       )}
@@ -136,10 +152,10 @@ function GridCell({ rec, onOpen }) {
         <div style={{
           width: "100%", height: "100%",
           display: "flex", alignItems: "center", justifyContent: "center",
-          padding: 10,
+          padding: "10px 10px 18px",
         }}>
           <span style={{
-            color: tint.color, fontSize: 13, fontWeight: 600, lineHeight: 1.25,
+            color: tint.color, fontSize: 13, fontWeight: 700, lineHeight: 1.25,
             textAlign: "center", wordBreak: "break-word",
             display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden",
           }}>
@@ -148,38 +164,44 @@ function GridCell({ rec, onOpen }) {
         </div>
       )}
 
-      {/* Save count — bottom right */}
+      {/* Visit badge — bottom left, white bg, green text + checkmark */}
+      {visitCount > 0 && (
+        <span style={{
+          position: "absolute", left: 4, bottom: 4,
+          background: "#fff", color: "#30D158",
+          fontSize: 10, fontWeight: 700,
+          padding: "2px 6px", borderRadius: 9999,
+          display: "inline-flex", alignItems: "center", gap: 3,
+          boxShadow: "0 1px 2px rgba(0,0,0,0.18)",
+        }}>
+          <Check size={9} strokeWidth={3} /> {visitCount}
+        </span>
+      )}
+      {/* Save count badge — bottom right, white bg, blue text */}
       {saveCount > 0 && (
         <span style={{
-          position: "absolute", right: 4, bottom: 18,
-          background: "rgba(10,132,255,0.92)", color: "#fff",
+          position: "absolute", right: 4, bottom: 4,
+          background: "#fff", color: "#0A84FF",
           fontSize: 10, fontWeight: 700,
-          padding: "2px 6px", borderRadius: 9999, display: "inline-flex", alignItems: "center", gap: 3,
+          padding: "2px 6px", borderRadius: 9999,
+          display: "inline-flex", alignItems: "center", gap: 3,
+          boxShadow: "0 1px 2px rgba(0,0,0,0.18)",
         }}>
           <Bookmark size={9} /> {saveCount}
         </span>
       )}
-      {/* Visit count — bottom left */}
-      {visitCount > 0 && (
+      {/* Date label — only on no-photo cells, bottom centre */}
+      {!hasPhoto && (
         <span style={{
-          position: "absolute", left: 4, bottom: 18,
-          background: "rgba(48,209,88,0.92)", color: "#fff",
-          fontSize: 10, fontWeight: 700,
-          padding: "2px 6px", borderRadius: 9999,
+          position: "absolute", left: 0, right: 0, bottom: 4,
+          textAlign: "center",
+          color: "#8E8E93",
+          fontSize: 10, fontWeight: 500,
+          pointerEvents: "none",
         }}>
-          ✓ {visitCount}
+          {formatMonthYear(rec.created_at)}
         </span>
       )}
-      {/* Date — bottom centre */}
-      <span style={{
-        position: "absolute", left: 0, right: 0, bottom: 3,
-        textAlign: "center",
-        color: hasPhoto ? "rgba(255,255,255,0.85)" : "#8E8E93",
-        textShadow: hasPhoto ? "0 1px 2px rgba(0,0,0,0.45)" : "none",
-        fontSize: 9, fontWeight: 500,
-      }}>
-        {formatMonthYear(rec.created_at)}
-      </span>
     </button>
   );
 }

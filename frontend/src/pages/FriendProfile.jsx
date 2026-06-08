@@ -7,6 +7,7 @@ import PlaceSheet from "../components/PlaceSheet";
 import Wordmark from "../components/Wordmark";
 import { track, Events } from "../lib/analytics";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
+import RecommendationsGrid from "../components/RecommendationsGrid";
 import {
   ChevronLeft, ChevronRight, UserCheck, UserPlus, MessageCircle,
   Instagram, MoreHorizontal, ShieldOff, Clock, Bookmark, BookmarkCheck,
@@ -16,6 +17,23 @@ import { formatMonthYear } from "../lib/utils-frec";
 import { flagForCountry } from "../lib/flags";
 
 const INSTAGRAM_GRADIENT = "linear-gradient(135deg,#f09433 0%,#e6683c 25%,#dc2743 50%,#cc2366 75%,#bc1888 100%)";
+
+function FriendTabBtn({ id, active, count, onClick, label }) {
+  return (
+    <button data-testid={`friend-tab-${id}`} onClick={onClick}
+      style={{ flex: 1, padding: "8px 12px", border: "none",
+        background: active ? "#fff" : "transparent",
+        color: "#1C1C1E", fontWeight: 600, fontSize: 14, borderRadius: 9999,
+        boxShadow: active ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+        display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+      }}>
+      {label}
+      {typeof count === "number" && count > 0 && (
+        <span style={{ color: "#8E8E93", fontSize: 12, fontWeight: 600 }}>· {count}</span>
+      )}
+    </button>
+  );
+}
 
 function FollowButton({ profile, onClick, icon, label }) {
   const isFollowing = profile.is_following;
@@ -71,6 +89,9 @@ export default function FriendProfile() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [placeOpen, setPlaceOpen] = useState(null);
   const [savedKeys, setSavedKeys] = useState(new Set());
+  // Tabs on friend profile (only when viewer can_view + no city is open)
+  const [profileTab, setProfileTab] = useState("trips");
+  const [recsCount, setRecsCount] = useState(null);
 
   // Stable place key — mirrors backend `_place_key`
   const placeKey = (r) => r.place_id || `name::${(r.place_name || "").toLowerCase().trim()}`;
@@ -333,53 +354,76 @@ export default function FriendProfile() {
       )}
 
       {profile.can_view && !openCity && (
-        Object.keys(byCountry).length === 0 ? (
-          <div className="px-6 mt-8"><p className="t-sub muted">{profile.name} hasn&apos;t added any places yet — maybe nudge them!</p></div>
-        ) : Object.entries(byCountry).map(([country, cities]) => (
-          <div key={country} style={{ marginTop: 28 }}>
-            <div className="px-4" style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
-              <h3 style={{ fontSize: 19, fontWeight: 700, color: "#1C1C1E", letterSpacing: "-0.2px", margin: 0 }}>
-                <span style={{ fontSize: 22, marginRight: 6 }}>{flagForCountry(country)}</span>
-                {country}
-              </h3>
-              <span className="t-cap muted" style={{ fontSize: 12 }}>
-                {cities.length} {cities.length === 1 ? "city" : "cities"}
-              </span>
-            </div>
-            <div className="mx-4" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {cities.map((c) => (
-                <button
-                  key={c.id}
-                  data-testid={`friend-city-${c.id}`}
-                  onClick={() => setOpenCity(c.id)}
-                  className="ios-card w-full text-left"
-                  style={{
-                    background: "#fff", border: "none",
-                    padding: "14px 16px",
-                    display: "flex", gap: 14, alignItems: "center",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-                  }}
-                >
-                  <div style={{
-                    width: 52, height: 52, borderRadius: 12,
-                    background: "#F2F2F7",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 28, flexShrink: 0,
-                  }}>
-                    {c.flag_emoji}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="t-title3" style={{ fontSize: 16 }}>{c.name}</div>
-                    <div className="t-cap muted" style={{ marginTop: 2 }}>
-                      {c.rec_count} recommendation{c.rec_count === 1 ? "" : "s"}
-                    </div>
-                  </div>
-                  <ChevronRight size={18} color="#C7C7CC" style={{ flexShrink: 0 }} />
-                </button>
-              ))}
+        <>
+          <div className="px-4 pt-4" data-testid="friend-profile-tabs">
+            <div style={{ background: "rgba(120,120,128,0.12)", borderRadius: 9999, padding: 4, display: "flex" }}>
+              <FriendTabBtn id="trips" active={profileTab === "trips"} onClick={() => setProfileTab("trips")} label="Trips" />
+              <FriendTabBtn id="recs" active={profileTab === "recs"} onClick={() => setProfileTab("recs")} label="Recommendations" count={recsCount} />
             </div>
           </div>
-        ))
+
+          {profileTab === "trips" && (
+            Object.keys(byCountry).length === 0 ? (
+              <div className="px-6 mt-8"><p className="t-sub muted">{profile.name} hasn&apos;t added any places yet — maybe nudge them!</p></div>
+            ) : Object.entries(byCountry).map(([country, cities]) => (
+              <div key={country} style={{ marginTop: 28 }}>
+                <div className="px-4" style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+                  <h3 style={{ fontSize: 19, fontWeight: 700, color: "#1C1C1E", letterSpacing: "-0.2px", margin: 0 }}>
+                    <span style={{ fontSize: 22, marginRight: 6 }}>{flagForCountry(country)}</span>
+                    {country}
+                  </h3>
+                  <span className="t-cap muted" style={{ fontSize: 12 }}>
+                    {cities.length} {cities.length === 1 ? "city" : "cities"}
+                  </span>
+                </div>
+                <div className="mx-4" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {cities.map((c) => (
+                    <button
+                      key={c.id}
+                      data-testid={`friend-city-${c.id}`}
+                      onClick={() => setOpenCity(c.id)}
+                      className="ios-card w-full text-left"
+                      style={{
+                        background: "#fff", border: "none",
+                        padding: "14px 16px",
+                        display: "flex", gap: 14, alignItems: "center",
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+                      }}
+                    >
+                      <div style={{
+                        width: 52, height: 52, borderRadius: 12,
+                        background: "#F2F2F7",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 28, flexShrink: 0,
+                      }}>
+                        {c.flag_emoji}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="t-title3" style={{ fontSize: 16 }}>{c.name}</div>
+                        <div className="t-cap muted" style={{ marginTop: 2 }}>
+                          {c.rec_count} recommendation{c.rec_count === 1 ? "" : "s"}
+                        </div>
+                      </div>
+                      <ChevronRight size={18} color="#C7C7CC" style={{ flexShrink: 0 }} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+
+          {profileTab === "recs" && (
+            <div data-testid="friend-recs-tab" style={{ marginTop: 12 }}>
+              <RecommendationsGrid
+                userId={userId}
+                isSelf={false}
+                profileUser={{ id: profile.id, name: profile.name, profile_photo_url: profile.profile_photo_url }}
+                onCount={setRecsCount}
+                hideHeader
+              />
+            </div>
+          )}
+        </>
       )}
 
       {profile.can_view && openCity && cityOpen && (

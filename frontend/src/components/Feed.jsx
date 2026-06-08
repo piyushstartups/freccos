@@ -285,7 +285,7 @@ export default function Feed({ onSwitchToCities, maxItems, hideEmptyHint }) {
 
 /* -------------- Cards -------------- */
 
-function CardShell({ children, onClick, tonal = false, testId }) {
+function CardShell({ children, onClick, tonal = false, accentLeft = false, testId }) {
   // Note — DO NOT add `onTouchEnd` here. iOS/Android both fire a synthetic
   // `click` after `touchend`; running the open handler in both lands the
   // follow-up click on the just-mounted backdrop and instantly closes the
@@ -305,6 +305,7 @@ function CardShell({ children, onClick, tonal = false, testId }) {
         cursor: onClick ? "pointer" : "default",
         boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
         borderRadius: 12,
+        borderLeft: accentLeft ? "3px solid #0A84FF" : undefined,
         WebkitTapHighlightColor: "transparent",
       }}
     >
@@ -392,9 +393,6 @@ function NewRecCard({ item, saved, onOpen, onSave }) {
   return (
     <CardShell onClick={onOpen} testId={`feed-new-rec-${item.rec_id}`}>
       <CardHeader user={item.user} when={item.created_at} />
-      <div className="t-sub muted" style={{ marginTop: 6, fontSize: 13 }}>
-        Added a recommendation in {item.city?.name} {item.city?.flag_emoji}
-      </div>
       {item.photo_url && (
         <div
           style={{
@@ -406,6 +404,22 @@ function NewRecCard({ item, saved, onOpen, onSave }) {
         />
       )}
       <div className="t-title3" style={{ marginTop: 10, wordBreak: "break-word" }}>{item.place_name}</div>
+      {item.city?.name && (
+        <div style={{ marginTop: 6 }}>
+          <span
+            data-testid={`feed-city-chip-${item.rec_id}`}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 5,
+              background: "#F2F2F7", color: "#1C1C1E",
+              fontSize: 12, fontWeight: 500,
+              padding: "3px 9px", borderRadius: 9999,
+            }}
+          >
+            <span aria-hidden style={{ lineHeight: 1 }}>{item.city.flag_emoji}</span>
+            <span>{item.city.name}</span>
+          </span>
+        </div>
+      )}
       {item.note && <ClampedNote text={item.note} />}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, gap: 12 }}>
         <CategoryChip category={item.category} />
@@ -432,7 +446,7 @@ function NewRecCard({ item, saved, onOpen, onSave }) {
 
 function NewTripCard({ item, onExplore }) {
   return (
-    <CardShell testId={`feed-new-trip-${item.id}`}>
+    <CardShell accentLeft testId={`feed-new-trip-${item.id}`}>
       <CardHeader user={item.user} when={item.created_at} />
       <p style={{ color: "#1C1C1E", fontSize: 15, lineHeight: 1.45, marginTop: 8 }}>
         <strong>{item.user?.name?.split(" ")[0]}</strong> added a trip to {item.city.name} {item.city.flag_emoji}

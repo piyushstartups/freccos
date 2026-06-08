@@ -1903,9 +1903,19 @@ async def list_user_recommendations(user_id: str, limit: int = 200, user: dict =
         return []
     city_ids = list({r["city_id"] for r in recs})
     cities_by_id = {c["id"]: c async for c in db.cities.find({"id": {"$in": city_ids}}, {"_id": 0})}
+    # Compute is_saved_by_me — viewer's saved place_keys across the cities in this batch.
+    saved_keys: set = set()
+    if user_id != user["id"]:
+        async for plan in db.trip_plans.find({"user_id": user["id"], "city_id": {"$in": city_ids}}, {"_id": 0}):
+            saved_ids = [s["recommendation_id"] for s in (plan.get("saved_recs") or [])]
+            if not saved_ids:
+                continue
+            async for sr in db.recommendations.find({"id": {"$in": saved_ids}}, {"_id": 0, "place_id": 1, "place_name": 1}):
+                saved_keys.add(_place_key(sr))
     for r in recs:
         c = cities_by_id.get(r["city_id"]) or {}
         r["city"] = {"id": c.get("id"), "name": c.get("name"), "country": c.get("country"), "flag_emoji": c.get("flag_emoji")}
+        r["is_saved_by_me"] = _place_key(r) in saved_keys if user_id != user["id"] else False
     return recs
 
 

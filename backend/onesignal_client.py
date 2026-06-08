@@ -333,6 +333,10 @@ async def trig_friend_new_trip(db, actor: dict, city: dict, recipient_id: str) -
 
 async def trig_your_rec_saved(db, saver: dict, place_name: str, city_name: str, owner_id: str, rec_id: str) -> None:
     """7. [Name] saved your recommendation for [Place Name] in [City]"""
+    # Dedup: same saver + same rec within 5 minutes → drop (avoids double-tap noise)
+    dedup_kind = f"your_rec_saved:{rec_id}"
+    if await _was_recently_notified(db, owner_id, saver.get("id") or "", dedup_kind, minutes=5):
+        return
     body = f"{_first(saver.get('name'))} saved your recommendation for {place_name} in {city_name}."
     await _send_to_user(
         db, owner_id, "your_rec_saved", body,
@@ -340,9 +344,13 @@ async def trig_your_rec_saved(db, saver: dict, place_name: str, city_name: str, 
         kind="your_rec_saved", actor_id=saver.get("id"),
         in_app_payload={"rec_id": rec_id, "place_name": place_name, "city_name": city_name},
     )
+    await _mark_notified(db, owner_id, saver.get("id") or "", dedup_kind)
 
 async def trig_your_rec_visited(db, visitor: dict, place_name: str, city_name: str, owner_id: str, rec_id: str) -> None:
     """8. [Name] just visited [Place]. A place you recommended"""
+    dedup_kind = f"your_rec_visited:{rec_id}"
+    if await _was_recently_notified(db, owner_id, visitor.get("id") or "", dedup_kind, minutes=5):
+        return
     body = f"{_first(visitor.get('name'))} just visited {place_name} in {city_name}. A place you recommended."
     await _send_to_user(
         db, owner_id, "your_rec_visited", body,
@@ -350,9 +358,13 @@ async def trig_your_rec_visited(db, visitor: dict, place_name: str, city_name: s
         kind="your_rec_visited", actor_id=visitor.get("id"),
         in_app_payload={"rec_id": rec_id, "place_name": place_name, "city_name": city_name},
     )
+    await _mark_notified(db, owner_id, visitor.get("id") or "", dedup_kind)
 
 async def trig_your_rec_inspired(db, inspiree: dict, place_name: str, city_name: str, owner_id: str, rec_id: str) -> None:
     """9. [Name] loved [Place] and added their own rec. You inspired them"""
+    dedup_kind = f"your_rec_inspired:{rec_id}"
+    if await _was_recently_notified(db, owner_id, inspiree.get("id") or "", dedup_kind, minutes=5):
+        return
     body = f"{_first(inspiree.get('name'))} loved {place_name} in {city_name} and added their own recommendation. You inspired them."
     await _send_to_user(
         db, owner_id, "your_rec_inspired", body,
@@ -360,6 +372,7 @@ async def trig_your_rec_inspired(db, inspiree: dict, place_name: str, city_name:
         kind="your_rec_inspired", actor_id=inspiree.get("id"),
         in_app_payload={"rec_id": rec_id, "place_name": place_name, "city_name": city_name},
     )
+    await _mark_notified(db, owner_id, inspiree.get("id") or "", dedup_kind)
 
 async def trig_monthly_impact(db, recipient_id: str, month_label: str) -> None:
     """10. Your Freccos impact for [Month] is ready"""

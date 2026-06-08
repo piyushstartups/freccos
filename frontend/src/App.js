@@ -23,6 +23,7 @@ import FollowList from "./pages/FollowList";
 import BlockedAccounts from "./pages/BlockedAccounts";
 import LegalPage from "./pages/LegalPage";
 import NotificationSettings from "./pages/NotificationSettings";
+import RecRedirect from "./pages/RecRedirect";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -97,6 +98,7 @@ function AppRoutes() {
         <Route path="/me/blocked" element={<BlockedAccounts />} />
         <Route path="/me/notifications" element={<NotificationSettings />} />
         <Route path="/notifications" element={<Notifications />} />
+        <Route path="/r/:recId" element={<RecRedirect />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

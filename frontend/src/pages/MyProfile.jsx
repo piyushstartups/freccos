@@ -12,6 +12,7 @@ import Wordmark from "../components/Wordmark";
 import ImpactSummaryCard from "../components/ImpactSummaryCard";
 import { track, Events } from "../lib/analytics";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
+import RecommendationsGrid from "../components/RecommendationsGrid";
 import { flagForCountry } from "../lib/flags";
 import {
   Settings, Share2, LogOut, Pencil, Trash2, ChevronLeft, ChevronRight, Plus, Map, MoreHorizontal,
@@ -38,6 +39,9 @@ export default function MyProfile() {
   const [menuRecId, setMenuRecId] = useState(null);
   const [countryFilter, setCountryFilter] = useState(null);
   const [placeOpen, setPlaceOpen] = useState(null); // { group, cityId }
+  // Tabs: 'trips' (default) | 'recs'
+  const [profileTab, setProfileTab] = useState("trips");
+  const [recsCount, setRecsCount] = useState(null);
   // Confirm-dialog state: { type: 'trip'|'rec', payload: {...}, title, message }
   const [confirm, setConfirm] = useState(null);
 
@@ -174,13 +178,30 @@ export default function MyProfile() {
       {!openCityId && (
         <>
           <ImpactSummaryCard />
-          <div className="px-4 pt-4 flex items-center justify-between">
-            <h2 className="t-title2">Trips</h2>
-            <button data-testid="me-add-trip" onClick={() => setAddTripOpen(true)} className="btn-pill"
-              style={{ background: "rgba(10,132,255,0.12)", color: "#0A84FF", padding: "8px 14px", fontSize: 13 }}>
-              <Map size={14} /> Add a trip
-            </button>
+
+          {/* Trips / Recommendations tab switcher */}
+          <div className="px-4 pt-4" data-testid="profile-tabs">
+            <div style={{ background: "rgba(120,120,128,0.12)", borderRadius: 9999, padding: 4, display: "flex" }}>
+              <ProfileTabBtn id="trips" active={profileTab === "trips"} onClick={() => setProfileTab("trips")} label="Trips" />
+              <ProfileTabBtn
+                id="recs"
+                active={profileTab === "recs"}
+                onClick={() => setProfileTab("recs")}
+                label="Recommendations"
+                count={recsCount}
+              />
+            </div>
           </div>
+
+          {profileTab === "trips" && (
+            <>
+              <div className="px-4 pt-4 flex items-center justify-between">
+                <h2 className="t-title2">Trips</h2>
+                <button data-testid="me-add-trip" onClick={() => setAddTripOpen(true)} className="btn-pill"
+                  style={{ background: "rgba(10,132,255,0.12)", color: "#0A84FF", padding: "8px 14px", fontSize: 13 }}>
+                  <Map size={14} /> Add a trip
+                </button>
+              </div>
 
           {allCities.length === 0 && (
             <div className="px-6 mt-6" data-testid="me-empty">
@@ -193,7 +214,7 @@ export default function MyProfile() {
             </div>
           )}
 
-          {allCities.length > 0 && Object.entries(byCountry).map(([country, cities]) => (
+          {allCities.length > 0 && profileTab === "trips" && Object.entries(byCountry).map(([country, cities]) => (
             <div key={country} style={{ marginTop: 28 }}>
               <div className="px-4" style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
                 <h3 style={{ fontSize: 19, fontWeight: 700, color: "#1C1C1E", letterSpacing: "-0.2px", margin: 0 }}>
@@ -265,6 +286,21 @@ export default function MyProfile() {
               </div>
             </div>
           ))}
+            </>
+          )}
+
+          {profileTab === "recs" && (
+            <div data-testid="me-recs-tab">
+              <RecommendationsGrid
+                userId={user.id}
+                isSelf
+                profileUser={{ id: user.id, name: user.name, profile_photo_url: user.profile_photo_url }}
+                onAddRec={() => { setEditingRec(null); setAddRecLockedCity(null); setAddRecOpen(true); }}
+                onCount={setRecsCount}
+                hideHeader
+              />
+            </div>
+          )}
         </>
       )}
 
@@ -747,6 +783,23 @@ function SettingsSheet({ open, onClose, user, onUpdated, onLogout, onBlocked }) 
         )}
       </div>
     </BottomSheet>
+  );
+}
+
+function ProfileTabBtn({ id, active, count, onClick, label }) {
+  return (
+    <button data-testid={`profile-tab-${id}`} onClick={onClick}
+      style={{ flex: 1, padding: "8px 12px", border: "none",
+        background: active ? "#fff" : "transparent",
+        color: "#1C1C1E", fontWeight: 600, fontSize: 14, borderRadius: 9999,
+        boxShadow: active ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+        display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+      }}>
+      {label}
+      {typeof count === "number" && count > 0 && (
+        <span style={{ color: "#8E8E93", fontSize: 12, fontWeight: 600 }}>· {count}</span>
+      )}
+    </button>
   );
 }
 
