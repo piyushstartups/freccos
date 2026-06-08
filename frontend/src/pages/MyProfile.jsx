@@ -508,7 +508,7 @@ function ProfileHero({ profile, cityCount, countryCount, countries, joined, coun
         }}
         data-testid="profile-stats-row"
       >
-        <Stat n={cityCount} label={cityCount === 1 ? "Recommendation" : "Recommendations"} testId="hero-places" />
+        <Stat n={cityCount} label={cityCount === 1 ? "Recco" : "Reccos"} testId="hero-places" />
         <Stat n={countryCount} label={countryCount === 1 ? "Country" : "Countries"} testId="hero-countries" />
         <Stat n={followers} label={followers === 1 ? "Follower" : "Followers"} onClick={onTapFollowers} testId="hero-followers" />
         <Stat n={following} label="Following" onClick={onTapFollowing} testId="hero-following" />

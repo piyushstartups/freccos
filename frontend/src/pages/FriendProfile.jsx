@@ -9,7 +9,7 @@ import { track, Events } from "../lib/analytics";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
 import {
   ChevronLeft, ChevronRight, UserCheck, UserPlus, MessageCircle,
-  Instagram, MoreHorizontal, ShieldOff, Clock,
+  Instagram, MoreHorizontal, ShieldOff, Clock, Bookmark, BookmarkCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatMonthYear } from "../lib/utils-frec";
@@ -70,6 +70,30 @@ export default function FriendProfile() {
   const [category, setCategory] = useState("all");
   const [menuOpen, setMenuOpen] = useState(false);
   const [placeOpen, setPlaceOpen] = useState(null);
+  const [savedKeys, setSavedKeys] = useState(new Set());
+
+  // Stable place key — mirrors backend `_place_key`
+  const placeKey = (r) => r.place_id || `name::${(r.place_name || "").toLowerCase().trim()}`;
+
+  const inlineSave = async (r, e) => {
+    e.stopPropagation();
+    const key = placeKey(r);
+    const cityId = r.city_id || openCity;
+    if (!cityId) return;
+    if (savedKeys.has(key)) {
+      // Already saved — open the place sheet so the user can unsave with confirmation
+      openPlaceFromRec(r);
+      return;
+    }
+    try {
+      // Ensure the user has a trip plan for this city (idempotent)
+      try { await api.post("/trip-plans/bucket-list", { city_id: cityId }); } catch { /* may already exist */ }
+      await api.post(`/trip-plans/${cityId}/save`, { recommendation_id: r.id });
+      setSavedKeys((s) => new Set([...s, key]));
+      toast.success(`Saved ${r.place_name}`);
+      track(Events.RECOMMENDATION_SAVED, { place_name: r.place_name, city_id: cityId, source: "friend_profile" });
+    } catch (err) { toast.error(err?.response?.data?.detail || "Couldn't save"); }
+  };
 
   const openPlaceFromRec = (r) => {
     setPlaceOpen({
@@ -115,6 +139,12 @@ export default function FriendProfile() {
     const { data } = await api.get(`/users/${userId}/cities/${cityId}/recommendations`,
       { params: cat === "all" ? {} : { category: cat } });
     setRecs(data);
+    // Hydrate which of these are already saved by the current user — uses the same
+    // /api/feed endpoint's saved-state derivation via /api/me/saved-keys-for-city.
+    try {
+      const { data: saved } = await api.get(`/trip-plans/${cityId}/saved-keys`);
+      setSavedKeys(new Set(saved?.place_keys || []));
+    } catch { /* endpoint optional */ }
   };
 
   useEffect(() => {
@@ -252,7 +282,7 @@ export default function FriendProfile() {
           style={{ display: "flex", alignItems: "baseline", gap: 18, marginTop: 14, flexWrap: "wrap" }}
           data-testid="profile-stats-row"
         >
-          <Stat n={profile.city_count} label={profile.city_count === 1 ? "Recommendation" : "Recommendations"} testId="stat-cities" />
+          <Stat n={profile.city_count} label={profile.city_count === 1 ? "Recco" : "Reccos"} testId="stat-cities" />
           <Stat n={profile.country_count} label={profile.country_count === 1 ? "Country" : "Countries"} testId="stat-countries" />
           <Stat n={followers} label={followers === 1 ? "Follower" : "Followers"}
                 onClick={() => profile.can_view && nav(`/user/${userId}/followers`)}
@@ -368,27 +398,57 @@ export default function FriendProfile() {
           <CategoryTabs value={category} onChange={setCategory} />
           <div className="px-4 space-y-3">
             {recs.length === 0 && <div className="ios-card px-4 py-6 text-center t-sub muted">No recommendations here yet.</div>}
-            {recs.map((r) => (
+            {recs.map((r) => {
+              const saved = savedKeys.has(placeKey(r));
+              return (
               <div
                 key={r.id}
                 role="button"
                 tabIndex={0}
                 onClick={() => openPlaceFromRec(r)}
+                onTouchEnd={(e) => {
+                  const tag = (e.target?.tagName || "").toLowerCase();
+                  if (tag === "button" || tag === "a" || e.target?.closest?.("button, a")) return;
+                  openPlaceFromRec(r);
+                }}
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPlaceFromRec(r); } }}
                 className="ios-card"
-                style={{ padding: "14px 16px", cursor: "pointer" }}
+                style={{ padding: "14px 16px", cursor: "pointer", WebkitTapHighlightColor: "transparent" }}
                 data-testid={`friend-rec-${r.id}`}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div style={{ flex: 1 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="t-title3">{r.place_name}</div>
                     <div className="mt-1"><CategoryChip category={r.category} /></div>
                     {r.note && <p className="t-body mt-2">{r.note}</p>}
+                    {(r.save_count || 0) > 0 && (
+                      <div className="t-cap muted mt-2" style={{ fontSize: 12 }}>
+                        Saved by {r.save_count} {r.save_count === 1 ? "person" : "people"}
+                      </div>
+                    )}
                     <div className="t-cap tertiary mt-2">{formatMonthYear(r.created_at)}</div>
                   </div>
                 </div>
+                <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
+                  <button
+                    onClick={(e) => inlineSave(r, e)}
+                    data-testid={`friend-rec-save-${r.id}`}
+                    className="btn-pill"
+                    style={{
+                      background: saved ? "rgba(48,209,88,0.15)" : "#0A84FF",
+                      color: saved ? "#1B7C2D" : "#fff",
+                      border: saved ? "1px solid #30D158" : "none",
+                      padding: "6px 14px", fontSize: 13,
+                      display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0,
+                    }}
+                  >
+                    {saved ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
+                    {saved ? "Saved" : "Save"}
+                  </button>
+                </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

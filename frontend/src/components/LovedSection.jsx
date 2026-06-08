@@ -82,16 +82,24 @@ export default function LovedSection() {
         {items.map((item) => {
           const key = placeKeyOf(item);
           const saved = savedKeys.has(key);
+          const handleOpen = () => openPlace(item);
+          const handleTouchEnd = (e) => {
+            const tag = (e.target?.tagName || "").toLowerCase();
+            if (tag === "button" || tag === "a") return;
+            if (e.target?.closest?.("button, a")) return;
+            handleOpen();
+          };
           return (
             <div
               key={item.rec_id}
               role="button"
               tabIndex={0}
-              onClick={() => openPlace(item)}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPlace(item); } }}
+              onClick={handleOpen}
+              onTouchEnd={handleTouchEnd}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleOpen(); } }}
               data-testid={`loved-card-${item.rec_id}`}
               className="ios-card"
-              style={{ padding: 14, cursor: "pointer", borderRadius: 12, background: "#fff" }}
+              style={{ padding: 14, cursor: "pointer", borderRadius: 12, background: "#fff", WebkitTapHighlightColor: "transparent" }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 {item.user && <Avatar user={item.user} size={28} />}

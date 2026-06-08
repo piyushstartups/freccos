@@ -2320,6 +2320,23 @@ async def my_impact(user: dict = Depends(current_user)):
 
 
 # Deep-link helper used by push notifications — opens the rec's primary place card.
+@api.get("/trip-plans/{city_id}/saved-keys")
+async def saved_place_keys_for_city(city_id: str, user: dict = Depends(current_user)):
+    """Return the set of place_keys (place_id OR normalised name) the current
+    user has saved in the given city. Used by friend-profile rec cards to
+    render the right Save / Saved state without a per-rec round-trip."""
+    plan = await db.trip_plans.find_one({"user_id": user["id"], "city_id": city_id}, {"_id": 0, "saved_recs": 1})
+    if not plan:
+        return {"place_keys": []}
+    rec_ids = [s["recommendation_id"] for s in (plan.get("saved_recs") or [])]
+    if not rec_ids:
+        return {"place_keys": []}
+    keys = []
+    async for r in db.recommendations.find({"id": {"$in": rec_ids}}, {"_id": 0}):
+        keys.append(_place_key(r))
+    return {"place_keys": keys}
+
+
 @api.get("/r/{rec_id}")
 async def deep_link_rec(rec_id: str):
     """Resolves a rec id → /city/<cityId>?rec=<id> for the SPA. Plain JSON for the

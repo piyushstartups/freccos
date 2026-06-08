@@ -35,7 +35,8 @@ export default function ExploreCitiesPreview({ onSeeAll }) {
 
 /**
  * Apple-style minimal city card — re-used by ExploreCitiesPreview AND the
- * Cities tab grid so both share an identical visual spec.
+ * Cities tab grid so both share an identical visual spec. Tight 12px padding
+ * with name + flag inline on the first row.
  */
 export function CityCard({ city, testId }) {
   return (
@@ -46,22 +47,27 @@ export function CityCard({ city, testId }) {
         display: "flex", flexDirection: "column", justifyContent: "space-between",
         background: "#fff", borderRadius: 12,
         boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-        padding: 14, textDecoration: "none", color: "#1C1C1E",
-        minHeight: 132,
+        padding: 12, textDecoration: "none", color: "#1C1C1E",
+        minHeight: 92,
       }}
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <span aria-hidden style={{ fontSize: 32, lineHeight: 1 }}>{city.flag_emoji}</span>
-        <div className="t-title3" style={{ marginTop: 6, fontSize: 16, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {city.name}
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span aria-hidden style={{ fontSize: 24, lineHeight: 1, flexShrink: 0 }}>{city.flag_emoji}</span>
+          <span className="t-title3" style={{
+            fontSize: 15, fontWeight: 700, color: "#1C1C1E",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0,
+          }}>
+            {city.name}
+          </span>
         </div>
-        <div style={{ color: "#8E8E93", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div style={{ color: "#8E8E93", fontSize: 12, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {city.country}
         </div>
       </div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
-        <StackedAvatars users={(city.friends || []).slice(0, 3)} size={20} />
-        <span style={{ color: "#0A84FF", fontSize: 12, fontWeight: 700 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
+        <StackedAvatars users={(city.friends || []).slice(0, 3)} size={18} />
+        <span style={{ color: "#0A84FF", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>
           {city.rec_count} {city.rec_count === 1 ? "rec" : "recommendations"}
         </span>
       </div>
