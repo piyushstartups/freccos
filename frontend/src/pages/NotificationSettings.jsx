@@ -84,7 +84,6 @@ export default function NotificationSettings() {
                   label={it.label}
                   value={!!prefs[it.key]}
                   onChange={(v) => toggle(it.key, v)}
-                  disabled={!allOn}
                 />
               ))}
             </div>
@@ -95,14 +94,13 @@ export default function NotificationSettings() {
   );
 }
 
-function Row({ label, value, onChange, last, testId, disabled }) {
+function Row({ label, value, onChange, last, testId }) {
   return (
     <div
       style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "14px 16px",
         borderBottom: last ? "none" : "1px solid #E5E5EA",
-        opacity: disabled ? 0.45 : 1,
       }}
     >
       <span className="t-body" style={{ fontSize: 15, color: "#1C1C1E", flex: 1, paddingRight: 12 }}>{label}</span>
@@ -110,12 +108,11 @@ function Row({ label, value, onChange, last, testId, disabled }) {
         data-testid={testId}
         role="switch"
         aria-checked={value}
-        disabled={disabled}
         onClick={() => onChange(!value)}
         style={{
           width: 50, height: 30, borderRadius: 9999, border: "none",
           background: value ? "#30D158" : "#E5E5EA",
-          position: "relative", cursor: disabled ? "not-allowed" : "pointer",
+          position: "relative", cursor: "pointer",
           transition: "background 200ms",
           flexShrink: 0,
         }}
