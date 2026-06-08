@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 6 — OneSignal subscription capture + impact-loop in-app notification rows. Backend pytest: 10 passed, 1 skipped (inspired loop deduped via rec.inspired_by_users from prior runs). Verified POST /api/users/me/onesignal-token (create, idempotent on same sub_id, multi-device append, 400 on empty, 401 unauth). Verified all push triggers write db.notifications rows with full payload (rec_id, place_name, city_name, body, deep_link_url=/r/<rec_id>), actor info via /users/me/notifications response (kind=your_rec_saved/your_rec_visited/your_rec_inspired/new_follower, actor.name=Arjun, payload.body containing 'saved your recommendation', etc.). Save/check/follow endpoints return <2.5s (fire-and-forget confirmed). Self-action save creates NO notification (Priya saving own rec — verified delta=0). Disabling new_follower pref still writes the in-app row (push gated, in-app always). No duplicate rows per trigger (delta <=1 on follow→unfollow→follow). Frontend: /api/users/me/onesignal-token returns 200 from the browser session; Activity tab on /notifications renders the 4 new kinds with correct copy (Arjun saved/added/visited/added trip in Alibag) and existing kinds (invite_joined, follow_accepted). One frontend bug found — deep-link tap routes to /explore instead of /city/<id> because openActivity() short-circuits on payload.deep_link_url='/r/<rec_id>' which is a backend path, not an SPA route.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "/app/frontend/src/pages/Notifications.jsx openActivity()",
+        "issue": "Tapping a your_rec_saved/your_rec_visited/your_rec_inspired notification navigates to /explore (the SPA's not-found fallback) instead of the city sheet at /city/<cityId>. Root cause: the backend writes payload.deep_link_url='/r/<rec_id>' (which is a backend API path), and openActivity() blindly does `nav(deep_link_url)` first, short-circuiting the per-kind fallback logic (lines 59-61) that would correctly call `api.get('/r/<rec_id>').then(r => nav('/city/' + r.data.city_id))`. Verified empirically: clicked notif-2f148a03..., URL changed to /explore instead of /city/e959de1b-00cf-40dc-9a24-2ef21057fa86 (Alibag).",
+        "selector": "[data-testid^='notif-'] (excluding notif-tab-*)",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_onesignal_impact_loop.py",
+    "/app/test_reports/pytest/iteration_6.xml"
+  ],
+  "action_items": [
+    "Fix Notifications.jsx openActivity() so that payload.deep_link_url starting with '/r/' is resolved via api.get('/r/<rec_id>') before navigation (recommended), OR change backend onesignal_client.py triggers for your_rec_saved/visited/inspired to set in_app_payload.deep_link_url to '/city/<city_id>' (and remove the line `if url_path: in_app_payload['deep_link_url'] = url_path` from _send_to_user when the path is a /r/ link). Either approach restores the deep-link to the city/place sheet.",
+    "Confirm in lib/onesignal.js that after requestPushPermission() returns 'granted' on a real device, _captureSubscription() POSTs /api/users/me/onesignal-token within ~1s (10x retry x 600ms cap). The endpoint contract is verified — only the browser-permission-grant path could not be exercised in Playwright headless. Code review of the v16 hooks (PushSubscription.id read + 'change' listener attached) looks correct."
+  ],
+  "critical_code_review_comments": [
+    "onesignal_client.py _send_to_user(): correctly always writes db.notifications BEFORE attempting push, so the Activity tab remains the single source of truth even on OneSignal 4xx. Verified: real OneSignal calls fail with 400 'not a valid UUID' for synthetic subscription IDs but the API endpoints still return 200 in <300ms.",
+    "server.py POST /users/me/onesignal-token: correct atomic upsert pattern — first attempts `update_one({id, onesignal_subscriptions.subscription_id: sub_id})` and falls back to `$push` only on `matched_count == 0`. Idempotent (no duplicates) and supports multi-device.",
+    "server.py: legacy create_notification() calls for new_follower, follow_accepted (request_accepted), invite_signup, and bucket_recs were removed — verified delta=1 per follow event (no duplicate rows).",
+    "Notifications.jsx openActivity(): deep_link_url short-circuit prevents per-kind resolution. The check `if (n.payload?.deep_link_url) { nav(...); return; }` must inspect the path scheme — '/r/<id>' is a backend route, not an SPA route, so the resolution fallback is unreachable. See action_items.",
+    "Frontend tests cannot grant push permission, so the requestPushPermission() → _captureSubscription() integration is exercised only at the API level (proven 200 OK from a logged-in session). To prove the full client-side path, an end-to-end browser test with a real notification-permission accept (or a unit test for _captureSubscription with a stubbed OneSignal object) would be needed."
+  ],
+  "updated_files": ["/app/backend/tests/test_onesignal_impact_loop.py"],
+  "success_rate": {"backend": "100% (10/10 passed, 1 expected skip)", "frontend": "~85% — onesignal-token POST 200, Activity tab renders all new kinds with correct copy, but deep-link tap routes to /explore instead of /city/<id> (one HIGH bug)"},
+  "test_credentials": "priya@freccos.com / Demo1234! ; arjun@freccos.com / Demo1234! ; kabir@freccos.com / Demo1234!",
+  "seed_data_creation": "Test posted Priya's onesignal_subscriptions entries (aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee01, ...ee02, plus the SPA test 'aaaaaaaa-...eeeeeeeeeeee'). To clean, delete these subscription_ids from users.onesignal_subscriptions for Priya. Triggered Arjun→Priya save/visit/(skipped inspired) which adds rows to Priya's notifications + bumps save_count/visit_count on rec 8cd54472. Triggered Arjun→Kabir follow/unfollow cycle which adds new_follower rows to Kabir's notifications. None are destructive — counts only accumulate.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression suite is /app/backend/tests/test_onesignal_impact_loop.py (10 passed + 1 expected skip). Re-run via `cd /app && python -m pytest backend/tests/test_onesignal_impact_loop.py -v`. Note: the test_inspired_when_arjun_posts_same_place is skipped on re-runs because Priya's rec inspired_by_users array already contains Arjun's id — to re-exercise, delete arjun's id from rec.inspired_by_users in MongoDB, OR delete Arjun's own rec at Sundowner Cafe (the test does cleanup but only its own newly-created rec). For the frontend deep-link bug, after the fix, re-test by logging in as Priya in the browser, navigate to /notifications → Activity tab → click any notif row whose text contains 'saved your recommendation' or 'visited' — URL must become /city/<cityId> (Alibag = e959de1b-00cf-40dc-9a24-2ef21057fa86).",
+  "rca of the issue": "Bug: Notifications.jsx openActivity() short-circuits on `payload.deep_link_url` and calls `nav('/r/<rec_id>')`, which is a backend API path not an SPA route, so react-router's catch-all redirects to /explore. The per-kind branch at lines 59-61 (which correctly does `api.get('/r/<id>').then(r => nav('/city/' + r.data.city_id))`) becomes dead code. Fix: either (a) make the frontend special-case deep_link_url starting with '/r/' and route via the api.get resolution, or (b) make the backend write deep_link_url as the resolved frontend path (/city/<city_id>) for rec-related kinds. Recommended (a): keeps the backend's `/r/<id>` semantics (which is also used as the OneSignal push.url) consistent across web push + in-app."
+}

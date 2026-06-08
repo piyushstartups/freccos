@@ -97,6 +97,43 @@ export function setOneSignalTags(tags) {
 
 // -------- Permission --------
 
+async function _captureSubscription(OneSignal) {
+  // Pull the subscription id (v16: OneSignal.User.PushSubscription.id) and POST
+  // it to Freccos so the backend can target this device directly. Retries up to
+  // 10 times because the id can be assigned asynchronously after `optIn()`.
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      const sub = OneSignal.User?.PushSubscription;
+      const id = sub?.id;
+      const optedIn = !!sub?.optedIn;
+      if (id) {
+        try {
+          const { default: api } = await import("./api");
+          await api.post("/users/me/onesignal-token", { subscription_id: id, opted_in: optedIn });
+        } catch (e) {
+          // Best-effort; the backend can re-sync on next login. Log once.
+          console.warn("[OneSignal] sub upload failed:", e); // eslint-disable-line no-console
+        }
+        return id;
+      }
+    } catch { /* ignore */ }
+    await new Promise((r) => setTimeout(r, 600));
+  }
+  return null;
+}
+
+async function _attachSubscriptionListener(OneSignal) {
+  // Re-sync the backend whenever the subscription state changes (e.g. token
+  // refresh, user toggling browser permission, multi-device login).
+  try {
+    if (OneSignal._freccosSubListenerAttached) return;
+    OneSignal._freccosSubListenerAttached = true;
+    OneSignal.User?.PushSubscription?.addEventListener?.("change", async () => {
+      await _captureSubscription(OneSignal);
+    });
+  } catch { /* ignore */ }
+}
+
 export async function getPermissionStatus() {
   return withOneSignal(async (OneSignal) => {
     try { return await OneSignal.Notifications.permission ? "granted" : (Notification?.permission || "default"); }
@@ -108,6 +145,12 @@ export async function requestPushPermission() {
     try {
       await OneSignal.Notifications.requestPermission();
       const granted = OneSignal.Notifications.permission;
+      if (granted) {
+        // Ensure subscription is active, then push the id to Freccos.
+        try { await OneSignal.User.PushSubscription.optIn(); } catch { /* may already be opted in */ }
+        await _attachSubscriptionListener(OneSignal);
+        await _captureSubscription(OneSignal);
+      }
       return granted ? "granted" : (Notification?.permission || "default");
     } catch { return Notification?.permission || "default"; }
   });
@@ -123,7 +166,18 @@ export async function setOptIn(value) {
     try {
       if (value) await OneSignal.User.PushSubscription.optIn();
       else await OneSignal.User.PushSubscription.optOut();
+      await _captureSubscription(OneSignal);
     } catch (e) { console.warn("[OneSignal] optIn/Out failed:", e); } // eslint-disable-line no-console
+  });
+}
+
+// Called after every successful Freccos login — pushes the current
+// subscription id to the backend (if we already have one) and attaches the
+// change listener so future changes auto-sync.
+export function syncSubscriptionWithBackend() {
+  return withOneSignal(async (OneSignal) => {
+    await _attachSubscriptionListener(OneSignal);
+    await _captureSubscription(OneSignal);
   });
 }
 

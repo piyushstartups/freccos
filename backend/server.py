@@ -589,6 +589,11 @@ class NotificationPrefsReq(BaseModel):
     notifications_seen: Optional[bool] = None
 
 
+class OneSignalTokenReq(BaseModel):
+    subscription_id: str
+    opted_in: Optional[bool] = True
+
+
 class RecCreateReq(BaseModel):
     place_name: str
     category: str  # food|experience|stay|getting_around
@@ -791,8 +796,7 @@ async def register(req: RegisterReq, response: Response):
         })
         await db.follows.insert_one({"follower_id": user_id, "following_id": referrer["id"], "created_at": now_iso})
         await db.follows.insert_one({"follower_id": referrer["id"], "following_id": user_id, "created_at": now_iso})
-        # In-app notif (legacy) + push (new)
-        await create_notification(referrer["id"], "invite_signup", actor_id=user_id)
+        # In-app + push are both written inside trig_invite_joined → _send_to_user.
         osn.fire(osn.trig_invite_joined(db, {"id": user_id, "name": req.name.strip()}, referrer["id"]))
 
     access = create_access_token(user_id, email)
@@ -1095,7 +1099,6 @@ async def follow_user(user_id: str, user: dict = Depends(current_user)):
         await db.follows.insert_one({"follower_id": user["id"], "following_id": user_id, "created_at": iso(now_utc())})
     except Exception:
         pass
-    await create_notification(user_id, "new_follower", actor_id=user["id"])
     osn.fire(osn.trig_new_follower(db, {"id": user["id"], "name": user.get("name")}, user_id))
     return {"status": "following"}
 
@@ -1143,7 +1146,6 @@ async def accept_request(request_id: str, user: dict = Depends(current_user)):
         pass
     # Mark related notification as read
     await db.notifications.update_many({"user_id": user["id"], "kind": "follow_request", "actor_id": rid}, {"$set": {"read": True}})
-    await create_notification(rid, "request_accepted", actor_id=user["id"])
     osn.fire(osn.trig_follow_accepted(db, {"id": user["id"], "name": user.get("name")}, rid))
     return {"ok": True}
 
@@ -1697,14 +1699,7 @@ async def create_recommendation(req: RecCreateReq, user: dict = Depends(current_
         is_first_trip_in_city = True
     except Exception:
         pass  # already exists — unique index
-    # Notify followers who have this city in their bucket list (saved_recs may be empty)
-    try:
-        followers_ids = user.get("followers", [])
-        if followers_ids:
-            async for plan in db.trip_plans.find({"user_id": {"$in": followers_ids}, "city_id": city["id"]}, {"_id": 0, "user_id": 1}).limit(500):
-                await create_notification(plan["user_id"], "bucket_recs", actor_id=user["id"], payload={"city_id": city["id"], "city_name": city.get("name")})
-    except Exception:
-        pass
+    # In-app records + push are both written by the OneSignal triggers below.
 
     # ---------- Push notifications ----------
     # 1) Count the author's recent recs to detect a 30-min "burst" (triggers 5/6 batch rule).
@@ -2114,6 +2109,36 @@ async def patch_notification_prefs(req: NotificationPrefsReq, user: dict = Depen
         await db.users.update_one({"id": user["id"]}, {"$set": update})
     u = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
     return public_user(u)
+
+
+@api.post("/users/me/onesignal-token")
+async def upsert_onesignal_token(req: OneSignalTokenReq, user: dict = Depends(current_user)):
+    """Capture/refresh a OneSignal subscription id for the current user. A user may
+    have multiple subscriptions (one per device/browser); each entry is keyed on
+    the subscription_id and carries an opted_in flag + last_seen timestamp."""
+    sub_id = (req.subscription_id or "").strip()
+    if not sub_id:
+        raise HTTPException(status_code=400, detail="subscription_id required")
+    now = iso(now_utc())
+    # Atomic upsert into the user's subscriptions array.
+    res = await db.users.update_one(
+        {"id": user["id"], "onesignal_subscriptions.subscription_id": sub_id},
+        {"$set": {
+            "onesignal_subscriptions.$.opted_in": bool(req.opted_in),
+            "onesignal_subscriptions.$.last_seen": now,
+        }},
+    )
+    if res.matched_count == 0:
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$push": {"onesignal_subscriptions": {
+                "subscription_id": sub_id,
+                "opted_in": bool(req.opted_in),
+                "last_seen": now,
+                "created_at": now,
+            }}},
+        )
+    return {"ok": True, "subscription_id": sub_id}
 
 
 # ----------------------- Impact summary -----------------------

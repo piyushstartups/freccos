@@ -47,13 +47,16 @@ def default_prefs() -> dict[str, bool]:
 
 
 def _first(name: str | None) -> str:
-    if not name: return "Someone"
+    if not name:
+        return "Someone"
     return name.split(" ")[0]
 
 
 def _abs_url(path: str) -> str:
-    if not path: return FRONTEND_URL
-    if path.startswith("http"): return path
+    if not path:
+        return FRONTEND_URL
+    if path.startswith("http"):
+        return path
     return f"{FRONTEND_URL}{path if path.startswith('/') else '/' + path}"
 
 
@@ -95,9 +98,11 @@ async def update_tags_by_external_id(external_id: str, tags: dict) -> None:
         return
     flat = {}
     for k, v in (tags or {}).items():
-        if v is None: continue
+        if v is None:
+            continue
         flat[k] = ",".join(map(str, v)) if isinstance(v, list) else str(v)
-    if not flat: return
+    if not flat:
+        return
     headers = {"Authorization": f"Key {API_KEY}", "Content-Type": "application/json"}
     url = f"/apps/{APP_ID}/users/external_id/{external_id}"
     try:
@@ -119,25 +124,71 @@ async def _send_to_user(
     *,
     heading: str = "Freccos",
     url_path: Optional[str] = None,
+    # In-app notification record (always written, regardless of push delivery)
+    kind: Optional[str] = None,         # in-app kind (defaults to pref_key)
+    actor_id: Optional[str] = None,
+    in_app_payload: Optional[dict] = None,
 ) -> None:
-    """Look up the recipient, check prefs + quiet hours, then push via OneSignal."""
-    if not user_id: return
-    user = await db.users.find_one({"id": user_id}, {"_id": 0, "notification_preferences": 1, "timezone": 1})
-    if not user: return
-    prefs = (user.get("notification_preferences") or default_prefs())
-    if not prefs.get(pref_key, True):
+    """Push via OneSignal AND write a row to the in-app `notifications` table.
+
+    Push delivery: prefer the user's stored OneSignal subscription IDs
+    (`users.onesignal_subscriptions[].subscription_id`); fall back to external_id
+    aliases. Always writes the in-app record so the Activity tab is the source
+    of truth regardless of whether push made it through.
+    """
+    if not user_id:
         return
-    # Quiet hours only apply to broadcast-style notifications (monthly impact summary).
-    # Personal/triggered notifications are immediate — that's the whole point.
+    user = await db.users.find_one(
+        {"id": user_id},
+        {"_id": 0, "notification_preferences": 1, "timezone": 1, "onesignal_subscriptions": 1},
+    )
+    if not user:
+        return
+    prefs = (user.get("notification_preferences") or default_prefs())
+    pref_enabled = prefs.get(pref_key, True)
+
+    # 1) ALWAYS write the in-app record (Activity tab) regardless of push prefs.
+    try:
+        in_app_payload = dict(in_app_payload or {})
+        in_app_payload.setdefault("body", body)
+        if url_path:
+            in_app_payload["deep_link_url"] = url_path
+        await db.notifications.insert_one({
+            "id": str(__import__("uuid").uuid4()),
+            "user_id": user_id,
+            "actor_id": actor_id,
+            "kind": kind or pref_key,
+            "payload": in_app_payload,
+            "read": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as e:
+        logger.exception("[onesignal] in-app write failed: %s", e)
+
+    # 2) Push delivery — gated by per-user pref toggle (+ quiet hours for broadcasts)
+    if not pref_enabled:
+        return
     if pref_key == "monthly_impact" and _in_quiet_hours(user.get("timezone")):
         logger.info("[onesignal] quiet hours, skipping %s to %s", pref_key, user_id)
         return
+
+    # Prefer subscription_ids of opted-in devices. Fall back to external_id alias.
+    sub_ids: list[str] = []
+    for s in (user.get("onesignal_subscriptions") or []):
+        sid = (s or {}).get("subscription_id")
+        if sid and (s.get("opted_in") is not False):  # default to opted-in if flag missing
+            sub_ids.append(sid)
+
     payload = {
         "headings": {"en": heading},
         "contents": {"en": body},
-        "include_aliases": {"external_id": [user_id]},
-        "data": {"pref_key": pref_key},
+        "data": {"pref_key": pref_key, "kind": kind or pref_key},
     }
+    if sub_ids:
+        payload["include_subscription_ids"] = sub_ids
+    else:
+        payload["include_aliases"] = {"external_id": [user_id]}
+
     if url_path:
         payload["url"] = _abs_url(url_path)
         payload["web_url"] = _abs_url(url_path)
@@ -167,24 +218,41 @@ async def _mark_notified(db, recipient_id: str, sender_id: str, kind: str) -> No
 async def trig_new_follower(db, actor: dict, recipient_id: str) -> None:
     """1. [Name] started following you on Freccos"""
     body = f"{_first(actor.get('name'))} started following you on Freccos."
-    await _send_to_user(db, recipient_id, "new_follower", body, url_path=f"/user/{actor['id']}")
+    await _send_to_user(
+        db, recipient_id, "new_follower", body,
+        url_path=f"/user/{actor['id']}",
+        kind="new_follower", actor_id=actor.get("id"),
+    )
 
 async def trig_follow_accepted(db, accepter: dict, requester_id: str) -> None:
     """2. [Name] accepted your follow request"""
     body = f"{_first(accepter.get('name'))} accepted your follow request."
-    await _send_to_user(db, requester_id, "follow_accepted", body, url_path=f"/user/{accepter['id']}")
+    await _send_to_user(
+        db, requester_id, "follow_accepted", body,
+        url_path=f"/user/{accepter['id']}",
+        kind="request_accepted", actor_id=accepter.get("id"),
+    )
 
 async def trig_invite_joined(db, joiner: dict, inviter_id: str) -> None:
     """3. [Name] just joined Freccos using your invite"""
     body = f"{_first(joiner.get('name'))} just joined Freccos using your invite."
-    await _send_to_user(db, inviter_id, "invite_joined", body, url_path=f"/user/{joiner['id']}")
+    await _send_to_user(
+        db, inviter_id, "invite_joined", body,
+        url_path=f"/user/{joiner['id']}",
+        kind="invite_signup", actor_id=joiner.get("id"),
+    )
 
 async def trig_rec_in_saved_city(db, actor: dict, city: dict, recipient_id: str) -> None:
     """4. [Name] added a new recommendation in [City]. Check it out"""
     if await _was_recently_notified(db, recipient_id, actor["id"], "rec_in_saved_city"):
         return
     body = f"{_first(actor.get('name'))} added a new recommendation in {city.get('name')}. Check it out."
-    await _send_to_user(db, recipient_id, "rec_in_saved_city", body, url_path=f"/city/{city['id']}")
+    await _send_to_user(
+        db, recipient_id, "rec_in_saved_city", body,
+        url_path=f"/city/{city['id']}",
+        kind="rec_in_saved_city", actor_id=actor.get("id"),
+        in_app_payload={"city_id": city.get("id"), "city_name": city.get("name")},
+    )
     await _mark_notified(db, recipient_id, actor["id"], "rec_in_saved_city")
 
 async def trig_friend_rec_burst(db, actor: dict, count: int, recipient_id: str) -> None:
@@ -192,7 +260,12 @@ async def trig_friend_rec_burst(db, actor: dict, count: int, recipient_id: str) 
     if await _was_recently_notified(db, recipient_id, actor["id"], "friend_rec_burst"):
         return
     body = f"{_first(actor.get('name'))} just added {count} new recommendations. See what they found."
-    await _send_to_user(db, recipient_id, "friend_rec_burst", body, url_path="/explore?tab=feed")
+    await _send_to_user(
+        db, recipient_id, "friend_rec_burst", body,
+        url_path="/explore?tab=feed",
+        kind="friend_rec_burst", actor_id=actor.get("id"),
+        in_app_payload={"count": count},
+    )
     await _mark_notified(db, recipient_id, actor["id"], "friend_rec_burst")
 
 async def trig_friend_new_trip(db, actor: dict, city: dict, recipient_id: str) -> None:
@@ -200,28 +273,53 @@ async def trig_friend_new_trip(db, actor: dict, city: dict, recipient_id: str) -
     if await _was_recently_notified(db, recipient_id, actor["id"], f"friend_new_trip:{city['id']}", minutes=60):
         return
     body = f"{_first(actor.get('name'))} just added a trip to {city.get('name')}."
-    await _send_to_user(db, recipient_id, "friend_new_trip", body, url_path="/explore?tab=feed")
+    await _send_to_user(
+        db, recipient_id, "friend_new_trip", body,
+        url_path="/explore?tab=feed",
+        kind="friend_new_trip", actor_id=actor.get("id"),
+        in_app_payload={"city_id": city.get("id"), "city_name": city.get("name")},
+    )
     await _mark_notified(db, recipient_id, actor["id"], f"friend_new_trip:{city['id']}")
 
 async def trig_your_rec_saved(db, saver: dict, place_name: str, city_name: str, owner_id: str, rec_id: str) -> None:
     """7. [Name] saved your recommendation for [Place Name] in [City]"""
     body = f"{_first(saver.get('name'))} saved your recommendation for {place_name} in {city_name}."
-    await _send_to_user(db, owner_id, "your_rec_saved", body, url_path=f"/r/{rec_id}")
+    await _send_to_user(
+        db, owner_id, "your_rec_saved", body,
+        url_path=f"/r/{rec_id}",
+        kind="your_rec_saved", actor_id=saver.get("id"),
+        in_app_payload={"rec_id": rec_id, "place_name": place_name, "city_name": city_name},
+    )
 
 async def trig_your_rec_visited(db, visitor: dict, place_name: str, city_name: str, owner_id: str, rec_id: str) -> None:
     """8. [Name] just visited [Place]. A place you recommended"""
     body = f"{_first(visitor.get('name'))} just visited {place_name} in {city_name}. A place you recommended."
-    await _send_to_user(db, owner_id, "your_rec_visited", body, url_path=f"/r/{rec_id}")
+    await _send_to_user(
+        db, owner_id, "your_rec_visited", body,
+        url_path=f"/r/{rec_id}",
+        kind="your_rec_visited", actor_id=visitor.get("id"),
+        in_app_payload={"rec_id": rec_id, "place_name": place_name, "city_name": city_name},
+    )
 
 async def trig_your_rec_inspired(db, inspiree: dict, place_name: str, city_name: str, owner_id: str, rec_id: str) -> None:
     """9. [Name] loved [Place] and added their own rec. You inspired them"""
     body = f"{_first(inspiree.get('name'))} loved {place_name} in {city_name} and added their own recommendation. You inspired them."
-    await _send_to_user(db, owner_id, "your_rec_inspired", body, url_path=f"/r/{rec_id}")
+    await _send_to_user(
+        db, owner_id, "your_rec_inspired", body,
+        url_path=f"/r/{rec_id}",
+        kind="your_rec_inspired", actor_id=inspiree.get("id"),
+        in_app_payload={"rec_id": rec_id, "place_name": place_name, "city_name": city_name},
+    )
 
 async def trig_monthly_impact(db, recipient_id: str, month_label: str) -> None:
     """10. Your Freccos impact for [Month] is ready"""
     body = f"Your Freccos impact for {month_label} is ready. See how your recommendations travelled the world."
-    await _send_to_user(db, recipient_id, "monthly_impact", body, url_path="/me")
+    await _send_to_user(
+        db, recipient_id, "monthly_impact", body,
+        url_path="/me",
+        kind="monthly_impact",
+        in_app_payload={"month_label": month_label},
+    )
 
 
 # -------- Fire-and-forget wrapper (so we never block the request) --------

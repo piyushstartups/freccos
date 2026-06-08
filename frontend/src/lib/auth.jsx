@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import api from "./api";
 import {
-  initOneSignal, loginOneSignal, logoutOneSignal, setOneSignalTags,
+  initOneSignal, loginOneSignal, logoutOneSignal, setOneSignalTags, syncSubscriptionWithBackend,
 } from "./onesignal";
 
 const AuthCtx = createContext(null);
@@ -43,6 +43,9 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (user && user.id) {
       loginOneSignal(user.id).catch(() => {});
+      // After identifying, push the current subscription id (if we have permission)
+      // and wire a listener so future subscription changes auto-sync to the backend.
+      syncSubscriptionWithBackend().catch(() => {});
       // Auto-detect the user's IANA timezone client-side; backend uses it for quiet hours.
       try {
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;

@@ -51,7 +51,15 @@ export default function Notifications() {
   };
 
   const openActivity = (n) => {
+    // Deep link: prefer payload.deep_link_url (set by push triggers), then explicit kinds
+    if (n.payload?.deep_link_url) { nav(n.payload.deep_link_url); return; }
     if (n.kind === "bucket_recs" && n.payload?.city_id) nav(`/city/${n.payload.city_id}`);
+    else if (n.kind === "rec_in_saved_city" && n.payload?.city_id) nav(`/city/${n.payload.city_id}`);
+    else if ((n.kind === "friend_rec_burst" || n.kind === "friend_new_trip")) nav(`/explore`);
+    else if ((n.kind === "your_rec_saved" || n.kind === "your_rec_visited" || n.kind === "your_rec_inspired") && n.payload?.rec_id) {
+      // Look up the rec to know its city; the SPA can hydrate the place sheet
+      api.get(`/r/${n.payload.rec_id}`).then((r) => nav(`/city/${r.data.city_id}`)).catch(() => {});
+    } else if (n.kind === "monthly_impact") nav("/me");
     else if (n.actor?.id) nav(`/user/${n.actor.id}`);
   };
 
@@ -150,13 +158,27 @@ function NotifTabBtn({ id, active, count, onClick, label }) {
 
 function ActivityText({ n }) {
   const actorName = n.actor?.name || "Someone";
+  const place = n.payload?.place_name;
+  const city = n.payload?.city_name || n.payload?.city_name;
   if (n.kind === "new_follower")
     return <span className="t-sub"><strong>{actorName}</strong> started following you</span>;
   if (n.kind === "request_accepted")
     return <span className="t-sub"><strong>{actorName}</strong> accepted your follow request</span>;
   if (n.kind === "invite_signup")
     return <span className="t-sub"><strong>{actorName}</strong> just joined Freccos using your invite!</span>;
-  if (n.kind === "bucket_recs")
-    return <span className="t-sub"><strong>{actorName}</strong> just added a recommendation in {n.payload?.city_name || "a city you've saved"}</span>;
+  if (n.kind === "bucket_recs" || n.kind === "rec_in_saved_city")
+    return <span className="t-sub"><strong>{actorName}</strong> added a new recommendation in {n.payload?.city_name || "a city you've saved"}</span>;
+  if (n.kind === "friend_rec_burst")
+    return <span className="t-sub"><strong>{actorName}</strong> just added {n.payload?.count || "a few"} new recommendations</span>;
+  if (n.kind === "friend_new_trip")
+    return <span className="t-sub"><strong>{actorName}</strong> just added a trip to {n.payload?.city_name || "a new city"}</span>;
+  if (n.kind === "your_rec_saved")
+    return <span className="t-sub"><strong>{actorName}</strong> saved your recommendation{place ? ` for ${place}` : ""}{city ? ` in ${city}` : ""}</span>;
+  if (n.kind === "your_rec_visited")
+    return <span className="t-sub"><strong>{actorName}</strong> just visited {place || "a place"}{city ? ` in ${city}` : ""}. A place you recommended.</span>;
+  if (n.kind === "your_rec_inspired")
+    return <span className="t-sub"><strong>{actorName}</strong> loved {place || "your pick"}{city ? ` in ${city}` : ""} and added their own recommendation. You inspired them.</span>;
+  if (n.kind === "monthly_impact")
+    return <span className="t-sub">Your Freccos impact for {n.payload?.month_label || "the month"} is ready.</span>;
   return <span className="t-sub">{actorName} did something</span>;
 }
