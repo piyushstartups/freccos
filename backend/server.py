@@ -1883,6 +1883,32 @@ async def list_city_recommendations(city_id: str, category: Optional[str] = None
     return out
 
 
+@api.get("/users/{user_id}/recommendations")
+async def list_user_recommendations(user_id: str, limit: int = 200, user: dict = Depends(current_user)):
+    """All recommendations for a user (any city), newest first. Used by the
+    Recommendations grid tab on My Profile + Friend Profile. Enforces the
+    same visibility rules as the city-scoped endpoint."""
+    target = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user_id != user["id"]:
+        # Block list — same gates as the rest of the friend-profile endpoints
+        if user["id"] in (target.get("blocked", []) or []):
+            raise HTTPException(status_code=403, detail="Not allowed")
+        if target.get("is_private") and user["id"] not in (target.get("followers", []) or []):
+            raise HTTPException(status_code=403, detail="Private account")
+    cursor = db.recommendations.find({"user_id": user_id}, {"_id": 0}).sort("created_at", -1).limit(max(1, min(limit, 500)))
+    recs = await cursor.to_list(length=limit)
+    if not recs:
+        return []
+    city_ids = list({r["city_id"] for r in recs})
+    cities_by_id = {c["id"]: c async for c in db.cities.find({"id": {"$in": city_ids}}, {"_id": 0})}
+    for r in recs:
+        c = cities_by_id.get(r["city_id"]) or {}
+        r["city"] = {"id": c.get("id"), "name": c.get("name"), "country": c.get("country"), "flag_emoji": c.get("flag_emoji")}
+    return recs
+
+
 @api.get("/users/{user_id}/cities/{city_id}/recommendations")
 async def list_user_city_recs(user_id: str, city_id: str, category: Optional[str] = None,
                               user: dict = Depends(current_user)):
