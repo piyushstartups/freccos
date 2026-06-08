@@ -1,0 +1,31 @@
+{
+  "summary": "Iteration 8 — Recommendations tab fully removed from MyProfile + FriendProfile, flag tile removed from individual city cards, and new 'Saved by N people' signal added below rec count (only when total_save_count >= 1). Backend: 7/7 pytest passed in /app/backend/tests/test_iter8_features.py covering: GET /api/trips returns total_save_count per city; GET /api/users/{id} cities have total_save_count; Priya's Alibag total_save_count>=1; Arjun's Alibag visible to Priya with total_save_count>=1; Iter-7 regressions (rec resolver /api/r/<id> and already_saved short-circuit) still green. Frontend (viewport 414x800, logged in as Priya): /me — none of the 4 forbidden testids exist (profile-tabs / profile-tab-trips / profile-tab-recs / me-recs-tab → all count=0); me-add-trip present; 5 city cards rendered grouped by country; NO 52x52 flag tile inside any city card; me-city-saves-<cityId> appears ONLY on cards with total_save_count>0 (Alibag '2 recommendations | Saved by 3 people', Paris '1 recommendation | Saved by 3 people'); cards with saves=0 (Goa, Berlin, Lisbon) correctly OMIT the chip. /user/<arjun-uid> — none of the 4 forbidden testids exist (friend-profile-tabs / friend-tab-trips / friend-tab-recs / friend-recs-tab → all count=0); 4 city cards (Goa, Alibag, Paris, Tokyo) grouped under flag-bearing country headers (🇮🇳 India, 🇫🇷 France, 🇯🇵 Japan); NO 52x52 flag tile inside any friend-city card; friend-city-saves-e959de1b... shows 'Saved by 3 people' on Arjun's Alibag; Tokyo/Goa/Paris (saves=0) correctly omit the chip. Webpack compiled cleanly — no console errors for the deleted RecommendationsGrid.jsx (confirmed via grep: 0 references remain in /app/frontend/src).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter8_features.py",
+    "/app/test_reports/pytest/iteration_8.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "/app/frontend/src/pages/MyProfile.jsx (line 211–243) — totalSaves = c.total_save_count || 0 is read off the merged cityById dict. Backend returns the field on both /api/users/<id>.cities[] and /api/trips[].city implicitly through the merge at line 147 (trips append only when not already present from profile.cities). Verify: the trips merge at line 147 stores ...t.city but NOT total_save_count from the trip object — if a city exists ONLY in /api/trips (no rec yet), it'll show 0 saves even if the backend trip payload has a top-level total_save_count. Edge case is benign because a city with no recs in profile.cities also has 0 saves by definition. No fix needed but worth a comment.",
+    "/app/frontend/src/pages/FriendProfile.jsx (line 350–382) — Friend cards directly use c.total_save_count from /api/users/<id>.cities; correct and simpler than MyProfile (no /api/trips merge needed for friend view). Logic matches spec: singular 'person' / plural 'people' applied via ternary on totalSaves===1.",
+    "/app/backend/server.py — `total_save_count` is correctly aggregated server-side per city in both /api/trips (~line 1935) and /api/users/{user_id} (~line 1000). Both endpoints return integer >=0; verified via pytest. Saved-by aggregation respects user privacy / block-list because it sums save_count off the user's own recommendations only.",
+    "Files of reference confirmed deleted/modified: /app/frontend/src/components/RecommendationsGrid.jsx — DELETED (ls fails, grep finds 0 references). RecommendationsGrid import is removed from MyProfile.jsx and FriendProfile.jsx (verified via view). Tab switcher block and profileTab/recsCount state removed in both files. ProfileTabBtn / FriendTabBtn helpers removed.",
+    "Testid hygiene is excellent: data-testid='me-city-saves-<cityId>' and 'friend-city-saves-<cityId>' are unique per city, only rendered when totalSaves>0 — playwright assertions can rely on count==1 for cities with saves and count==0 for cities without."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter8_features.py"
+  ],
+  "success_rate": {"backend": "100% (7/7 passed)", "frontend": "100% — all 7 spec items verified in browser (no tab switcher x2, no 52x52 flag tile x2, saved-by chip presence x2, country flag header still shows)"},
+  "test_credentials": "priya@freccos.com / Demo1234! ; arjun@freccos.com / Demo1234!",
+  "seed_data_creation": "None. The Iter-7 regression test re-saves Arjun's first rec from Priya (idempotent — short-circuits to already_saved=true on second call).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression suite: `cd /app && python -m pytest backend/tests/test_iter7_features.py backend/tests/test_iter8_features.py -v`. Stable IDs for browser checks: Priya's Alibag city = e959de1b-00cf-40dc-9a24-2ef21057fa86, Paris city = ceaf82ec-f104-4e27-b1ab-d61e3b08a6e2, Arjun uid = c3892cc6-31d0-4a12-9395-23004e615a9a (friend profile route = /user/<uid>, NOT /users/<uid>). Routes confirmed: /me (MyProfile), /user/<uid> (FriendProfile). Login form: button has role=button name='Sign in' (no type=submit).",
+  "rca of the issue": "No bugs. All three Iter 8 changes (remove Recommendations tab, add saved-by signal, remove flag tile from city card) implemented per spec on both MyProfile and FriendProfile. Webpack compiles cleanly after RecommendationsGrid.jsx deletion."
+}

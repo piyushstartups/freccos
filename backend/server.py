@@ -1033,7 +1033,7 @@ async def get_user_profile(user_id: str, user: dict = Depends(current_user)):
     rec_ids_by_city: dict = {}
     async for r in db.recommendations.find(
         {"user_id": user_id},
-        {"_id": 0, "city_id": 1, "photo_url": 1},
+        {"_id": 0, "city_id": 1, "photo_url": 1, "save_count": 1},
     ).limit(2000):
         rec_ids_by_city.setdefault(r["city_id"], []).append(r)
     trip_city_ids = set()
@@ -1045,7 +1045,8 @@ async def get_user_profile(user_id: str, user: dict = Depends(current_user)):
         async for c in db.cities.find({"id": {"$in": all_city_ids}}, {"_id": 0}).limit(500):
             recs = rec_ids_by_city.get(c["id"], [])
             photos = [r["photo_url"] for r in recs if r.get("photo_url")][:3]
-            cities.append({**c, "rec_count": len(recs), "photos": photos})
+            total_save = sum(int(r.get("save_count") or 0) for r in recs)
+            cities.append({**c, "rec_count": len(recs), "photos": photos, "total_save_count": total_save})
     countries = sorted({c["country"] for c in cities if c.get("country")})
     return {
         **base,
@@ -1937,9 +1938,11 @@ async def list_trips(user: dict = Depends(current_user)):
     """Cities the user has been to (explicit trips + cities where they have recs)."""
     rec_city_ids = set()
     rec_counts: dict = {}
-    async for r in db.recommendations.find({"user_id": user["id"]}, {"_id": 0, "city_id": 1}).limit(1000):
+    save_counts: dict = {}
+    async for r in db.recommendations.find({"user_id": user["id"]}, {"_id": 0, "city_id": 1, "save_count": 1}).limit(1000):
         rec_city_ids.add(r["city_id"])
         rec_counts[r["city_id"]] = rec_counts.get(r["city_id"], 0) + 1
+        save_counts[r["city_id"]] = save_counts.get(r["city_id"], 0) + int(r.get("save_count") or 0)
     explicit = set()
     async for t in db.user_trips.find({"user_id": user["id"]}, {"_id": 0, "city_id": 1}).limit(500):
         explicit.add(t["city_id"])
@@ -1950,6 +1953,7 @@ async def list_trips(user: dict = Depends(current_user)):
     return [{
         "city_id": cid, "city": cities.get(cid),
         "rec_count": rec_counts.get(cid, 0),
+        "total_save_count": save_counts.get(cid, 0),
     } for cid in all_ids if cid in cities]
 
 
