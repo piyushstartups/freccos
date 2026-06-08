@@ -51,13 +51,19 @@ export default function Notifications() {
   };
 
   const openActivity = (n) => {
-    // Deep link: prefer payload.deep_link_url (set by push triggers), then explicit kinds
-    if (n.payload?.deep_link_url) { nav(n.payload.deep_link_url); return; }
+    const deep = n.payload?.deep_link_url;
+    // Backend writes `/r/<rec_id>` for rec-related triggers — that's an API path,
+    // not an SPA route. Resolve it via /api/r/<id> → /city/<cityId>.
+    if (deep && deep.startsWith("/r/")) {
+      const recId = deep.split("/r/")[1];
+      api.get(`/r/${recId}`).then((r) => nav(`/city/${r.data.city_id}`)).catch(() => nav("/explore"));
+      return;
+    }
+    if (deep) { nav(deep); return; }
     if (n.kind === "bucket_recs" && n.payload?.city_id) nav(`/city/${n.payload.city_id}`);
     else if (n.kind === "rec_in_saved_city" && n.payload?.city_id) nav(`/city/${n.payload.city_id}`);
     else if ((n.kind === "friend_rec_burst" || n.kind === "friend_new_trip")) nav(`/explore`);
     else if ((n.kind === "your_rec_saved" || n.kind === "your_rec_visited" || n.kind === "your_rec_inspired") && n.payload?.rec_id) {
-      // Look up the rec to know its city; the SPA can hydrate the place sheet
       api.get(`/r/${n.payload.rec_id}`).then((r) => nav(`/city/${r.data.city_id}`)).catch(() => {});
     } else if (n.kind === "monthly_impact") nav("/me");
     else if (n.actor?.id) nav(`/user/${n.actor.id}`);
