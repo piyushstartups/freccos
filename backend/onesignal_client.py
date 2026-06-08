@@ -114,6 +114,56 @@ async def update_tags_by_external_id(external_id: str, tags: dict) -> None:
         logger.exception("[onesignal] tag patch exception: %s", e)
 
 
+async def fetch_user_by_external_id(external_id: str) -> Optional[dict]:
+    """GET the OneSignal user record by external_id. Returns the parsed payload
+    (with .subscriptions[]) or None if the user doesn't exist on OneSignal yet.
+
+    Used to recover the push token for users where the v16 SDK got stuck on a
+    409 conflict during init — the SDK never POSTed the subscription id to our
+    backend, but OneSignal itself has the subscription server-side. We pull it
+    from OneSignal directly and merge into users.onesignal_subscriptions[].
+    """
+    if not APP_ID or not API_KEY or not external_id:
+        return None
+    headers = {"Authorization": f"Key {API_KEY}", "Content-Type": "application/json"}
+    url = f"/apps/{APP_ID}/users/by/external_id/{external_id}"
+    try:
+        async with httpx.AsyncClient(base_url=ONESIGNAL_BASE, timeout=10.0) as c:
+            r = await c.get(url, headers=headers)
+        if r.status_code == 200:
+            return r.json()
+        if r.status_code == 404:
+            return None
+        logger.warning("[onesignal] fetch_user_by_external_id %s -> %s: %s", external_id, r.status_code, r.text[:200])
+        return None
+    except Exception as e:
+        logger.exception("[onesignal] fetch_user_by_external_id exception: %s", e)
+        return None
+
+
+def extract_subscription_ids(user_payload: dict) -> list[dict]:
+    """Pull out push subscriptions with non-empty tokens from a OneSignal user
+    payload. Returns a list of {subscription_id, opted_in, type, token_present}.
+    """
+    out = []
+    for s in (user_payload or {}).get("subscriptions", []) or []:
+        if not s:
+            continue
+        s_type = (s.get("type") or "").lower()
+        if s_type not in ("chromepush", "safaripush", "firefoxpush", "edgepush", "webpush"):
+            continue
+        sub_id = s.get("id")
+        if not sub_id:
+            continue
+        out.append({
+            "subscription_id": sub_id,
+            "opted_in": bool(s.get("enabled", True)),
+            "type": s_type,
+            "token_present": bool(s.get("token")),
+        })
+    return out
+
+
 # -------- Core send helper (called by every trigger) --------
 
 async def _send_to_user(

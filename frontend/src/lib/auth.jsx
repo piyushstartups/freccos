@@ -45,7 +45,7 @@ export function AuthProvider({ children }) {
       loginOneSignal(user.id).catch(() => {});
       // After identifying, push the current subscription id (if we have permission)
       // and wire a listener so future subscription changes auto-sync to the backend.
-      syncSubscriptionWithBackend().catch(() => {});
+      syncSubscriptionWithBackend(user.id).catch(() => {});
       // Auto-detect the user's IANA timezone client-side; backend uses it for quiet hours.
       try {
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;

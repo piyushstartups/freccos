@@ -182,7 +182,15 @@ export async function setOptIn(value) {
 //     call `PushSubscription.optIn()` to register the existing browser permission.
 //     Zero user interaction — fully transparent.
 //  3. POST the resulting subscription id to the Freccos backend.
-export function syncSubscriptionWithBackend() {
+//
+// If the SDK is stuck on a 409 (OneSignal already has a record for this user
+// but the SDK's local state has a conflicting onesignal_id), we recover by:
+//  - calling `OneSignal.logout()` to drop the stale local identity,
+//  - re-`login()`-ing with the Freccos user id,
+//  - `optIn()`-ing again to force a fresh subscription registration,
+//  - and as a final fallback, asking our backend to fetch existing
+//    subscriptions from OneSignal's REST API by external_id.
+export function syncSubscriptionWithBackend(externalId) {
   return withOneSignal(async (OneSignal) => {
     await _attachSubscriptionListener(OneSignal);
 
@@ -203,7 +211,43 @@ export function syncSubscriptionWithBackend() {
       }
     } catch { /* ignore */ }
 
-    await _captureSubscription(OneSignal);
+    // Try once with the current state. If we capture an id, great.
+    let capturedId = await _captureSubscription(OneSignal);
+
+    // 409 recovery — happens when OneSignal already has a user record but the
+    // SDK's local anonymous onesignal_id conflicts with it. Symptom: after
+    // optIn() + polling, no subscription id ever materializes locally.
+    if (!capturedId && externalId) {
+      try {
+        await OneSignal.logout();
+      } catch (e) {
+        console.warn("[OneSignal] logout failed during recovery:", e); // eslint-disable-line no-console
+      }
+      try {
+        await OneSignal.login(externalId);
+      } catch (e) {
+        console.warn("[OneSignal] re-login failed during recovery:", e); // eslint-disable-line no-console
+      }
+      try {
+        await OneSignal.User.PushSubscription.optIn();
+      } catch (e) {
+        console.warn("[OneSignal] post-recovery optIn failed:", e); // eslint-disable-line no-console
+      }
+      capturedId = await _captureSubscription(OneSignal);
+    }
+
+    // Final fallback — ask the backend to fetch subscriptions from OneSignal
+    // server-side via GET /apps/{appId}/users/by/external_id/{userId}. This
+    // covers cases where the SDK is fundamentally unable to recover client-side
+    // (eg. permission state is fine but onesignal_id is unrecoverable here).
+    if (!capturedId) {
+      try {
+        const { default: api } = await import("./api");
+        await api.post("/users/me/onesignal-recover");
+      } catch (e) {
+        // Silent — backend logs the underlying reason.
+      }
+    }
   });
 }
 

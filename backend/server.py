@@ -2141,6 +2141,47 @@ async def upsert_onesignal_token(req: OneSignalTokenReq, user: dict = Depends(cu
     return {"ok": True, "subscription_id": sub_id}
 
 
+@api.post("/users/me/onesignal-recover")
+async def recover_onesignal_subscription(user: dict = Depends(current_user)):
+    """Recovery endpoint for users where the SDK got stuck on a 409 conflict.
+
+    Calls OneSignal REST API GET /apps/{appId}/users/by/external_id/{user_id}
+    and merges every push subscription it finds into users.onesignal_subscriptions[].
+    Idempotent and safe to call on every login.
+    """
+    payload = await osn.fetch_user_by_external_id(user["id"])
+    if not payload:
+        return {"ok": True, "found": 0, "added": 0, "reason": "no_onesignal_user"}
+    subs = osn.extract_subscription_ids(payload)
+    if not subs:
+        return {"ok": True, "found": 0, "added": 0, "reason": "no_push_subscriptions"}
+    now = iso(now_utc())
+    added = 0
+    for s in subs:
+        sub_id = s["subscription_id"]
+        res = await db.users.update_one(
+            {"id": user["id"], "onesignal_subscriptions.subscription_id": sub_id},
+            {"$set": {
+                "onesignal_subscriptions.$.opted_in": s["opted_in"],
+                "onesignal_subscriptions.$.last_seen": now,
+            }},
+        )
+        if res.matched_count == 0:
+            await db.users.update_one(
+                {"id": user["id"]},
+                {"$push": {"onesignal_subscriptions": {
+                    "subscription_id": sub_id,
+                    "opted_in": s["opted_in"],
+                    "last_seen": now,
+                    "created_at": now,
+                    "recovered": True,
+                    "type": s.get("type"),
+                }}},
+            )
+            added += 1
+    return {"ok": True, "found": len(subs), "added": added}
+
+
 # ----------------------- Impact summary -----------------------
 
 @api.get("/me/impact")
