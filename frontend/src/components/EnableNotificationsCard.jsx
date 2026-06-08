@@ -78,9 +78,7 @@ export default function EnableNotificationsCard({
         marginLeft: variant === "onboarding" ? "auto" : 0,
         marginRight: variant === "onboarding" ? "auto" : 0,
       }}>
-        {variant === "onboarding"
-          ? "Get notified when your friends add new recommendations, follow you, or plan trips."
-          : "Turn on notifications to know when your friends add new recs."}
+        Be the first to know what your friends are loving.
       </p>
 
       {/* iOS Safari + non-standalone: show Add-to-Home-Screen instructions */}

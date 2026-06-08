@@ -127,8 +127,9 @@ async def _send_to_user(
     prefs = (user.get("notification_preferences") or default_prefs())
     if not prefs.get(pref_key, True):
         return
-    if _in_quiet_hours(user.get("timezone")):
-        # Drop quietly — we don't queue notifications in v1.
+    # Quiet hours only apply to broadcast-style notifications (monthly impact summary).
+    # Personal/triggered notifications are immediate — that's the whole point.
+    if pref_key == "monthly_impact" and _in_quiet_hours(user.get("timezone")):
         logger.info("[onesignal] quiet hours, skipping %s to %s", pref_key, user_id)
         return
     payload = {

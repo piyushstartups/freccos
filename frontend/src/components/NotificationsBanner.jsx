@@ -68,7 +68,7 @@ export default function NotificationsBanner() {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="t-title3" style={{ fontSize: 13, color: "#0A84FF" }}>New</div>
         <div className="t-sub" style={{ fontSize: 13, color: "#1C1C1E", lineHeight: 1.35 }}>
-          Get notified when your friends add places.
+          Be the first to know what your friends are loving.
         </div>
       </div>
       <button
