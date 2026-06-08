@@ -231,7 +231,15 @@ export default function Feed({ onSwitchToCities, maxItems, hideEmptyHint }) {
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
-      style={{ transform: `translateY(${pullY}px)`, transition: pullStartY.current ? "none" : "transform 200ms ease-out" }}
+      // CRITICAL: only set transform when we're actually pulling. A non-none
+      // transform creates a containing block for `position: fixed` descendants
+      // — applying `translateY(0px)` permanently would cause the PlaceSheet
+      // bottom-sheet (rendered as a child below) to position itself relative
+      // to this Feed div instead of the viewport, making it appear offscreen
+      // and behave unpredictably on card tap.
+      style={pullY > 0
+        ? { transform: `translateY(${pullY}px)`, transition: pullStartY.current ? "none" : "transform 200ms ease-out" }
+        : undefined}
       data-testid="feed"
     >
       {(refreshing || pullY > 0) && (

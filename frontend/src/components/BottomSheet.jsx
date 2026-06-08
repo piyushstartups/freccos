@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 // iOS-style bottom sheet with native drag-to-dismiss. Pure CSS + touch math —
 // no animation library. Pointer events cover touch + mouse + pen uniformly.
@@ -99,7 +100,7 @@ export default function BottomSheet({ open, onClose, title, children, testId = "
     ? { background: `rgba(0,0,0,${Math.max(0.05, 0.4 - offset / 800)})`, animation: "none" }
     : {};
 
-  return (
+  return createPortal(
     <>
       <div
         className="sheet-backdrop"
@@ -141,6 +142,7 @@ export default function BottomSheet({ open, onClose, title, children, testId = "
         )}
         <div>{children}</div>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }
