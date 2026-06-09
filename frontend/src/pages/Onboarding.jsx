@@ -1,38 +1,37 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BookmarkCheck } from "lucide-react";
 
 const STORAGE_KEY = "freccos:onboarded";
 
-/* Premium 3-screen onboarding shown once per device. Pure CSS mockups —
-   they look like real Freccos surfaces but render fast and don't need
-   asset hosting. Dark #1C1C1E background, Cormorant Garamond captions. */
+/* Mobile-first onboarding shown once per device.
+   Screen order: Landing → Insight 1 → Insight 2 → Insight 3 → /login.
+   Pure dark layout. Cormorant Garamond is ONLY used for the "Freccos"
+   wordmark on the landing screen. Everything else uses -apple-system. */
 export default function Onboarding() {
   const nav = useNavigate();
-  const [idx, setIdx] = useState(0);
+  const [idx, setIdx] = useState(0); // 0 = landing, 1..3 = insight screens
 
   const finish = () => {
     try { localStorage.setItem(STORAGE_KEY, "1"); } catch { /* noop */ }
     nav("/login", { replace: true });
   };
 
-  // Swipe gestures (lightweight)
+  // Swipe between insight screens (1..3) only.
   const [touchStart, setTouchStart] = useState(null);
   const onTouchStart = (e) => setTouchStart(e.touches[0].clientX);
   const onTouchEnd = (e) => {
-    if (touchStart == null) return;
+    if (touchStart == null || idx === 0) return;
     const dx = e.changedTouches[0].clientX - touchStart;
-    if (dx < -50 && idx < 2) setIdx(idx + 1);
-    if (dx > 50 && idx > 0) setIdx(idx - 1);
+    if (dx < -50 && idx < 3) setIdx(idx + 1);
+    if (dx > 50 && idx > 1) setIdx(idx - 1);
     setTouchStart(null);
   };
 
-  const screens = [
-    { Mockup: ScreenOneMock, caption: "Know which friends have been to the places on your bucket list." },
-    { Mockup: ScreenTwoMock, caption: "Discover what they genuinely loved and recommend." },
-    { Mockup: ScreenThreeMock, caption: "Recommend the places you love so your friends can experience them too." },
+  const insights = [
+    "Know which friends have been to the places on your bucket list.",
+    "Discover what they genuinely loved and recommend.",
+    "Recommend the places you love so your friends can experience them too.",
   ];
-  const current = screens[idx];
 
   return (
     <div
@@ -40,204 +39,256 @@ export default function Onboarding() {
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
       style={{
-        position: "fixed", inset: 0, background: "#1C1C1E", color: "#fff",
-        display: "flex", flexDirection: "column",
-        padding: "calc(env(safe-area-inset-top) + 18px) 20px calc(env(safe-area-inset-bottom) + 24px)",
+        position: "fixed", inset: 0,
+        background: "#1C1C1E",
+        display: "flex",
+        justifyContent: "center",
         zIndex: 100,
-        fontFamily: "'Cormorant Garamond', 'Times New Roman', serif",
+        overflow: "hidden",
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif",
+        WebkitFontSmoothing: "antialiased",
       }}
     >
-      {/* Top bar */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ flex: 1 }} />
-        <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 18, letterSpacing: 0.4 }}>Freccos</span>
-        <button
-          onClick={finish}
-          data-testid="onboarding-skip"
-          style={{ flex: 1, textAlign: "right", background: "transparent", border: "none", color: "#8E8E93", fontSize: 14, cursor: "pointer", fontFamily: "system-ui, -apple-system, sans-serif" }}
-        >
-          {idx < 2 ? "Skip" : ""}
-        </button>
-      </div>
-
-      {/* Mockup area */}
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", marginTop: 16 }}>
-        <div
-          key={idx}
-          className="ob-mock-in"
-          style={{
-            width: "100%", maxWidth: 320, aspectRatio: "9 / 14",
-            boxShadow: "0 30px 80px rgba(0,0,0,0.55), 0 8px 24px rgba(0,0,0,0.35)",
-            borderRadius: 28,
-            overflow: "hidden",
-          }}
-        >
-          <current.Mockup />
-        </div>
-      </div>
-
-      {/* Caption */}
-      <p style={{
-        fontFamily: "'Cormorant Garamond', 'Times New Roman', serif",
-        textAlign: "center", color: "#fff",
-        fontSize: 28, lineHeight: 1.35, fontWeight: 500,
-        margin: "26px auto 0", maxWidth: 360,
-        letterSpacing: 0.1,
-      }}>
-        {current.caption}
-      </p>
-
-      {/* Dots */}
-      <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 22 }}>
-        {[0, 1, 2].map((i) => (
-          <span
-            key={i}
-            data-testid={`onboarding-dot-${i}`}
-            style={{
-              width: i === idx ? 8 : 6, height: i === idx ? 8 : 6,
-              borderRadius: 9999,
-              background: i === idx ? "#fff" : "rgba(255,255,255,0.3)",
-              transition: "all 200ms ease-out",
-            }}
-          />
-        ))}
-      </div>
-
-      {/* Bottom CTA */}
-      <div style={{ marginTop: 22, display: "flex", justifyContent: idx < 2 ? "flex-end" : "stretch" }}>
-        {idx < 2 ? (
-          <button
-            data-testid="onboarding-next"
-            onClick={() => setIdx(idx + 1)}
-            className="btn-pill btn-primary"
-            style={{ padding: "12px 28px", fontSize: 15, fontWeight: 600, fontFamily: "system-ui, -apple-system, sans-serif" }}
-          >
-            Next
-          </button>
+      {/* Mobile-first container — caps at 390px even on desktop */}
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 390,
+          minHeight: "100%",
+          color: "#fff",
+          display: "flex",
+          flexDirection: "column",
+          paddingTop: "calc(env(safe-area-inset-top) + 18px)",
+          paddingBottom: "calc(env(safe-area-inset-bottom) + 24px)",
+          paddingLeft: 24,
+          paddingRight: 24,
+          position: "relative",
+        }}
+      >
+        {idx === 0 ? (
+          <LandingScreen onStart={() => setIdx(1)} />
         ) : (
-          <button
-            data-testid="onboarding-get-started"
-            onClick={finish}
-            className="btn-pill btn-primary"
-            style={{ width: "100%", padding: "14px 24px", fontSize: 16, fontWeight: 600, fontFamily: "system-ui, -apple-system, sans-serif" }}
-          >
-            Get started
-          </button>
+          <InsightScreen
+            key={idx}
+            screen={idx}
+            text={insights[idx - 1]}
+            onNext={() => (idx < 3 ? setIdx(idx + 1) : finish())}
+            onSkip={finish}
+          />
         )}
       </div>
 
       <style>{`
-        @keyframes obMockIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes obCardFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes obSavePulse { 0% { transform: scale(0.9); } 60% { transform: scale(1.15); } 100% { transform: scale(1); } }
-        @keyframes obCursor { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
-        .ob-mock-in { animation: obMockIn 300ms ease-out both; }
-        .ob-card-1 { animation: obCardFadeIn 350ms ease-out 0ms both; }
-        .ob-card-2 { animation: obCardFadeIn 350ms ease-out 150ms both; }
-        .ob-card-3 { animation: obCardFadeIn 350ms ease-out 300ms both; }
-        .ob-save-pulse { animation: obSavePulse 450ms ease-out 350ms both; }
-        .ob-cursor { animation: obCursor 1s steps(1) infinite; }
+        @keyframes fadeSlide {
+          from { opacity: 0; transform: translateX(16px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+        .ob-fade { animation: fadeSlide 300ms cubic-bezier(0.2, 0.9, 0.3, 1.1) both; }
+        .ob-cta:active { transform: scale(0.97); }
       `}</style>
     </div>
   );
 }
 
-// ---------- Mockup 1: City screen with 3 friend recommendation cards ----------
-function ScreenOneMock() {
-  const friends = [
-    { name: "Priya", initial: "P", place: "Sundowner Cafe", note: "Sunset is unreal here.", color: "#FF9F0A" },
-    { name: "Arjun", initial: "A", place: "Mango Reef", note: "Best fresh fish in town.", color: "#BF5AF2" },
-    { name: "Sara", initial: "S", place: "Saffronart Studio", note: "Tucked away, totally magical.", color: "#5AC8FA" },
-  ];
+/* ───────────────────────── Landing ───────────────────────── */
+function LandingScreen({ onStart }) {
   return (
-    <div style={{ width: "100%", height: "100%", background: "#F2F2F7", display: "flex", flexDirection: "column" }}>
-      <div style={{ background: "#1C1C1E", color: "#fff", padding: "18px 14px 14px" }}>
-        <div style={{ fontSize: 22, fontWeight: 700 }}>🇮🇳 Alibag</div>
-        <div style={{ fontSize: 10, color: "#8E8E93", marginTop: 2 }}>3 friends have been here</div>
-      </div>
-      <div style={{ flex: 1, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8, overflow: "hidden" }}>
-        {friends.map((f, i) => (
-          <div key={f.name} className={`ob-card-${i + 1}`}
-            style={{ background: "#fff", borderRadius: 10, padding: 10, display: "flex", gap: 9, alignItems: "flex-start", boxShadow: "0 1px 2px rgba(0,0,0,0.06)" }}>
-            <div style={{ width: 24, height: 24, borderRadius: 9999, background: f.color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0, fontFamily: "system-ui" }}>
-              {f.initial}
-            </div>
-            <div style={{ minWidth: 0, flex: 1, fontFamily: "system-ui" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#1C1C1E" }}>{f.place}</div>
-              <div style={{ fontSize: 9.5, color: "#8E8E93", marginTop: 1 }}>by {f.name}</div>
-              <div style={{ fontSize: 10, color: "#3a3a3c", marginTop: 4, lineHeight: 1.35 }}>{f.note}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+    <div className="ob-fade" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+      {/* Spacer — pushes the brand block into upper third */}
+      <div style={{ flex: "0 0 18%" }} />
 
-// ---------- Mockup 2: Single beautiful rec card with bookmark animation ----------
-function ScreenTwoMock() {
-  return (
-    <div style={{ width: "100%", height: "100%", background: "#F2F2F7", display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
-      <div className="ob-card-1" style={{
-        width: "100%", background: "#fff", borderRadius: 12, padding: 14,
-        boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontFamily: "system-ui",
-      }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <div style={{ width: 22, height: 22, borderRadius: 9999, background: "#FF9F0A", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>P</div>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#1C1C1E" }}>Priya</div>
-            <div style={{ fontSize: 9, color: "#8E8E93" }}>2d ago</div>
-          </div>
-        </div>
-        <div style={{ marginTop: 10, fontSize: 14, fontWeight: 700, color: "#1C1C1E" }}>Sundowner Cafe</div>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#F2F2F7", color: "#1C1C1E", fontSize: 9, padding: "2px 7px", borderRadius: 9999, marginTop: 5 }}>
-          🇮🇳 <span>Alibag</span>
-        </div>
-        <p style={{ fontSize: 11, color: "#3a3a3c", lineHeight: 1.4, marginTop: 8 }}>
-          The samosas, the chai, that sea view. We came back three days in a row. It is that good.
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <img
+          src="/freccos-logo.png"
+          alt="Freccos"
+          width={80}
+          height={80}
+          style={{ display: "block", borderRadius: 18 }}
+        />
+        <h1
+          data-testid="onboarding-wordmark"
+          style={{
+            fontFamily: "'Cormorant Garamond', 'Times New Roman', serif",
+            fontSize: 32,
+            fontWeight: 600,
+            color: "#fff",
+            margin: "20px 0 0",
+            letterSpacing: 0.4,
+            lineHeight: 1,
+          }}
+        >
+          Freccos
+        </h1>
+        <p
+          style={{
+            fontFamily: "-apple-system, BlinkMacSystemFont, system-ui, sans-serif",
+            fontSize: 16,
+            color: "#8E8E93",
+            margin: "12px 0 0",
+            textAlign: "center",
+            lineHeight: 1.45,
+          }}
+        >
+          Discover the world through your people.
         </p>
-        <div style={{ marginTop: 8, fontSize: 10, fontWeight: 600, color: "#0A84FF" }}>Saved by 6 people</div>
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
-          <span className="ob-save-pulse" style={{
-            background: "rgba(48,209,88,0.15)", color: "#1B7C2D", border: "1px solid #30D158",
-            padding: "5px 11px", borderRadius: 9999, fontSize: 11, fontWeight: 600,
-            display: "inline-flex", alignItems: "center", gap: 4,
-          }}>
-            <BookmarkCheck size={11} /> Saved
-          </span>
-        </div>
       </div>
+
+      <div style={{ flex: 1 }} />
+
+      <button
+        data-testid="onboarding-get-started"
+        onClick={onStart}
+        className="ob-cta"
+        style={{
+          width: "100%",
+          height: 48,
+          borderRadius: 9999,
+          background: "#0A84FF",
+          color: "#fff",
+          border: "none",
+          fontFamily: "-apple-system, BlinkMacSystemFont, system-ui, sans-serif",
+          fontSize: 16,
+          fontWeight: 600,
+          cursor: "pointer",
+          transition: "transform 150ms ease-out",
+        }}
+      >
+        Get started
+      </button>
     </div>
   );
 }
 
-// ---------- Mockup 3: Add a Recommendation sheet ----------
-function ScreenThreeMock() {
+/* ───────────────────── Insight screens (1..3) ───────────────────── */
+function InsightScreen({ screen, text, onNext, onSkip }) {
+  const isLast = screen === 3;
   return (
-    <div style={{ width: "100%", height: "100%", background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "flex-end" }}>
-      <div className="ob-card-1" style={{
-        width: "100%", background: "#fff", borderTopLeftRadius: 16, borderTopRightRadius: 16,
-        padding: "12px 14px 18px", fontFamily: "system-ui",
-      }}>
-        <div style={{ width: 32, height: 4, background: "#E5E5EA", borderRadius: 4, margin: "0 auto 12px" }} />
-        <div style={{ fontSize: 13, fontWeight: 700, color: "#1C1C1E" }}>Add a recommendation</div>
-        <label style={{ display: "block", fontSize: 9, fontWeight: 600, color: "#8E8E93", textTransform: "uppercase", letterSpacing: 0.6, marginTop: 10 }}>Place</label>
-        <div style={{ background: "#F2F2F7", borderRadius: 8, padding: "8px 10px", marginTop: 4, fontSize: 12, fontWeight: 600, color: "#1C1C1E" }}>
-          Sundowner Cafe
-        </div>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#F2F2F7", color: "#1C1C1E", fontSize: 9, padding: "2px 7px", borderRadius: 9999, marginTop: 6 }}>
-          🇮🇳 <span>Alibag</span>
-        </div>
-        <label style={{ display: "block", fontSize: 9, fontWeight: 600, color: "#8E8E93", textTransform: "uppercase", letterSpacing: 0.6, marginTop: 12 }}>Note</label>
-        <div style={{ background: "#F2F2F7", borderRadius: 8, padding: "8px 10px", marginTop: 4, fontSize: 11, color: "#1C1C1E", lineHeight: 1.45 }}>
-          Lovely vibes. 10/10 if you are around<span className="ob-cursor" style={{ color: "#0A84FF", marginLeft: 1 }}>|</span>
-        </div>
-        <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
-          <span style={{ background: "#0A84FF", color: "#fff", padding: "6px 14px", borderRadius: 9999, fontSize: 11, fontWeight: 600 }}>
-            Post
-          </span>
-        </div>
+    <div className="ob-fade" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+      {/* Top row: Skip aligned right */}
+      <div style={{ display: "flex", justifyContent: "flex-end", height: 24 }}>
+        <button
+          data-testid="onboarding-skip"
+          onClick={onSkip}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "#8E8E93",
+            fontFamily: "-apple-system, BlinkMacSystemFont, system-ui, sans-serif",
+            fontSize: 14,
+            cursor: "pointer",
+            padding: 0,
+          }}
+        >
+          Skip
+        </button>
       </div>
+
+      {/* Logo mark */}
+      <div style={{ display: "flex", justifyContent: "center", marginTop: 6 }}>
+        <img
+          src="/freccos-logo.png"
+          alt=""
+          width={40}
+          height={40}
+          style={{ display: "block", borderRadius: 9 }}
+        />
+      </div>
+
+      {/* Insight text — centred vertically in the remaining space */}
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "0 8px",
+        }}
+      >
+        <p
+          data-testid={`onboarding-insight-${screen}`}
+          style={{
+            fontFamily: "-apple-system, BlinkMacSystemFont, system-ui, sans-serif",
+            fontSize: 34,
+            fontWeight: 300,
+            color: "#fff",
+            lineHeight: 1.3,
+            textAlign: "center",
+            margin: 0,
+            letterSpacing: -0.4,
+          }}
+        >
+          {text}
+        </p>
+      </div>
+
+      {/* Dots */}
+      <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 22 }}>
+        {[1, 2, 3].map((i) => {
+          const active = i === screen;
+          return (
+            <span
+              key={i}
+              data-testid={`onboarding-dot-${i}`}
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: 9999,
+                background: active ? "#fff" : "#8E8E93",
+                opacity: active ? 1 : 0.4,
+                transition: "all 200ms ease-out",
+                display: "inline-block",
+              }}
+            />
+          );
+        })}
+      </div>
+
+      {/* CTA — Next (bottom right) on 1+2, Get started (full width) on 3 */}
+      {isLast ? (
+        <button
+          data-testid="onboarding-finish"
+          onClick={onNext}
+          className="ob-cta"
+          style={{
+            width: "100%",
+            height: 48,
+            borderRadius: 9999,
+            background: "#0A84FF",
+            color: "#fff",
+            border: "none",
+            fontFamily: "-apple-system, BlinkMacSystemFont, system-ui, sans-serif",
+            fontSize: 16,
+            fontWeight: 600,
+            cursor: "pointer",
+            transition: "transform 150ms ease-out",
+          }}
+        >
+          Get started
+        </button>
+      ) : (
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button
+            data-testid="onboarding-next"
+            onClick={onNext}
+            className="ob-cta"
+            style={{
+              height: 48,
+              padding: "0 28px",
+              borderRadius: 9999,
+              background: "#0A84FF",
+              color: "#fff",
+              border: "none",
+              fontFamily: "-apple-system, BlinkMacSystemFont, system-ui, sans-serif",
+              fontSize: 16,
+              fontWeight: 600,
+              cursor: "pointer",
+              transition: "transform 150ms ease-out",
+            }}
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 }
