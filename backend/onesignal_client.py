@@ -127,29 +127,57 @@ async def update_tags_by_external_id(external_id: str, tags: dict) -> None:
 async def attach_external_id_to_subscription(subscription_id: str, external_id: str) -> bool:
     """Force-link a OneSignal subscription to a Freccos user.id as external_id.
 
-    This belt-and-braces step handles the case where the v16 SDK opted the
-    browser in BEFORE `OneSignal.login(externalId)` was called — the result is
-    a subscription that exists on OneSignal with no external_id link, which
-    means our trigger sends via `include_aliases.external_id` will return
-    `recipients=0`. Calling this on every fresh subscription guarantees the
-    link is established server-side regardless of SDK state on the device.
+    Two-step strategy to handle "split identity" — when the v16 SDK opted the
+    browser in BEFORE `OneSignal.login(externalId)` was called, the result is
+    TWO records on the OneSignal side:
+      • record A: external_id=freccos.id, NO subscriptions
+      • record B: anonymous, owns the real push subscription
+    Patching identity on record B's subscription with the external_id returns
+    409 because record A already owns it.
+
+    Step 1: try the simple PATCH /users/by/subscription_id/{sub}/identity path.
+    Step 2: if that fails (409 or any non-2xx), transfer the subscription's
+            ownership to whichever user record owns the external_id via
+            POST /subscriptions/{sub}/owner. This collapses the split identity.
     """
     if not APP_ID or not API_KEY or not subscription_id or not external_id:
         return False
     headers = {"Authorization": f"Key {API_KEY}", "Content-Type": "application/json"}
-    url = f"/apps/{APP_ID}/users/by/subscription_id/{subscription_id}/identity"
-    body = {"identity": {"external_id": str(external_id)}}
+    sub_log = subscription_id[:8] + "…"
+
+    # Step 1 — try simple alias attach.
     try:
         async with httpx.AsyncClient(base_url=ONESIGNAL_BASE, timeout=10.0) as c:
-            r = await c.patch(url, json=body, headers=headers)
+            r = await c.patch(
+                f"/apps/{APP_ID}/users/by/subscription_id/{subscription_id}/identity",
+                json={"identity": {"external_id": str(external_id)}},
+                headers=headers,
+            )
         if r.status_code in (200, 201, 202):
-            logger.info("[onesignal] linked external_id=%s to sub=%s", external_id, subscription_id[:8] + "…")
+            logger.info("[onesignal] linked (alias) external_id=%s to sub=%s", external_id, sub_log)
             return True
-        logger.warning("[onesignal] attach_external_id %s/%s -> %s: %s",
-                       external_id, subscription_id[:8] + "…", r.status_code, r.text[:200])
+        logger.info("[onesignal] alias attach %s/%s -> %s: %s — trying transfer",
+                    external_id, sub_log, r.status_code, r.text[:200])
+    except Exception as e:
+        logger.exception("[onesignal] alias attach exception: %s", e)
+
+    # Step 2 — transfer subscription ownership to the user record holding external_id.
+    try:
+        async with httpx.AsyncClient(base_url=ONESIGNAL_BASE, timeout=10.0) as c:
+            r = await c.post(
+                f"/apps/{APP_ID}/subscriptions/{subscription_id}/owner",
+                json={"identity": {"external_id": str(external_id)}},
+                headers=headers,
+            )
+        if r.status_code in (200, 201, 202):
+            logger.info("[onesignal] linked (transfer) external_id=%s to sub=%s",
+                        external_id, sub_log)
+            return True
+        logger.warning("[onesignal] transfer %s/%s -> %s: %s",
+                       external_id, sub_log, r.status_code, r.text[:300])
         return False
     except Exception as e:
-        logger.exception("[onesignal] attach_external_id exception: %s", e)
+        logger.exception("[onesignal] transfer subscription exception: %s", e)
         return False
 
 
