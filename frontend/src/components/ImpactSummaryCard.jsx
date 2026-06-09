@@ -42,7 +42,7 @@ export default function ImpactSummaryCard() {
   };
 
   const stats = showAllTime ? data.all_time : data.current_month;
-  const summaryLine = `${stats.saves || 0} save${stats.saves === 1 ? "" : "s"} · ${stats.visits || 0} visit${stats.visits === 1 ? "" : "s"} · ${data.follower_count || 0} follower${data.follower_count === 1 ? "" : "s"}`;
+  const summaryLine = `${stats.saves || 0} save${stats.saves === 1 ? "" : "s"} · ${stats.visits || 0} visit${stats.visits === 1 ? "" : "s"} · ${stats.inspired || 0} inspired`;
 
   return (
     <div
@@ -130,7 +130,6 @@ export default function ImpactSummaryCard() {
             <Row label="Recommendations saved by friends" value={stats.saves} testId="impact-saves" />
             <Row label="Places visited because of your recs" value={stats.visits} testId="impact-visits" />
             <Row label="Friends who added their own recs inspired by yours" value={stats.inspired} testId="impact-inspired" />
-            <Row label="People following you" value={data.follower_count} testId="impact-followers" />
           </div>
 
           {data.most_loved && (

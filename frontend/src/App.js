@@ -24,6 +24,7 @@ import BlockedAccounts from "./pages/BlockedAccounts";
 import LegalPage from "./pages/LegalPage";
 import NotificationSettings from "./pages/NotificationSettings";
 import RecRedirect from "./pages/RecRedirect";
+import Onboarding from "./pages/Onboarding";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -80,8 +81,10 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<Splash />} />
+      <Route path="/onboarding" element={<Onboarding />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/invite/:code" element={<Signup />} />
       <Route path="/forgot" element={<ForgotPassword />} />
       <Route path="/privacy" element={<LegalPage title="Privacy Policy" testId="privacy-page" />} />
       <Route path="/terms" element={<LegalPage title="Terms of Service" testId="terms-page" />} />

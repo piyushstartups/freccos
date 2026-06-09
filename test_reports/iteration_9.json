@@ -1,0 +1,22 @@
+{
+  "summary": "Iteration 9 frontend regression covered all 15 requested checks. Onboarding flow (3 screens, dots, Skip, Next, Get started, localStorage 'freccos:onboarded' set to '1', nav to /login) all verified. /invite/FRECCOS1 deep-link auto-fills signup-invite and auto-validates (signup-invite-ok visible, 'Invited by Priya Sharma'). Explore: subtab-cities labelled 'Places', is default and active (#0A84FF rgb(10,132,255)), placeholder 'Where do you want to go?', label 'Explore recommendations in the cities your people have been to.' present. Feed sub-tab shows 'See all places' (not 'See all cities'). MyProfile: profile-tabs + Trips/Reccos switcher works, recs-list renders 14 rows with bold place name, meta line, 'Saved by N' only on those with save_count>0 (2 such rows for Priya), three-dot menu opens rec-list-edit/rec-list-delete. me-city-saves-* entirely absent (0). impact-followers row absent. Kabir empty state shows the new headline + subhead + 'Add a recommendation' button. FriendProfile (Arjun): friend-profile-tabs, friend-tab-recs, 6 rec-list-save-* buttons; friend-city-saves-* absent (0). People subtitle 'Find your friends on Freccos.' visible. PWA: /manifest.json (name='Freccos'), /icon-192.png, /icon-512.png, /icon-180.png all 200; apple-mobile-web-app-capable/status-bar-style/title meta tags present in index.html. Source-level: buildInviteMessage('FRECCOS1') starts with 'You know how you always wish' and contains 'https://freccos.com/invite/FRECCOS1'. Saved-tab empty-state copy exists in code (TripPlans.jsx line 30) but doesn't render for Priya because she already has saved trips — verified by reading source; this is correct gating, not a bug.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_9.json"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Onboarding.jsx imports Bookmark but never uses it (unused import) — minor lint warning. Can be removed.",
+    "OneSignal SDK throws init error 'Can only be used on: https://freccos.com' on every page load in preview — expected since preview is on a different domain; consider gating OneSignal.init() to production domain to silence console noise."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (not retested — no backend changes this iteration)", "frontend": "100%" },
+  "test_credentials": "priya@freccos.com / Demo1234! (has recs), kabir@freccos.com / Demo1234! (no recs), arjun@freccos.com / Demo1234!",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 15 review_request checks passed on iteration 9. The Saved-tab copy assertion appears 'False' in a body text scan because the logged-in test users have saved items; the empty-state copy is correctly present at /app/frontend/src/pages/TripPlans.jsx:30 and only renders when plans.length===0. No regressions on /r/<recId>, save dedup, or trip-plan save flow observed (UI confirmed working when Priya viewed Arjun's reccos). Backend was not retested per agent_to_agent_context_note that backend code did not change."
+}

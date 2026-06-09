@@ -21,7 +21,7 @@ export default function ExploreCitiesPreview({ onSeeAll }) {
       <SectionHeader
         icon={<Compass size={15} color="#0A84FF" />}
         title="Explore a city"
-        seeAllLabel="See all cities"
+        seeAllLabel="See all places"
         onSeeAll={onSeeAll}
       />
       <div className="px-4 grid grid-cols-2 gap-3" style={{ marginTop: 8 }}>

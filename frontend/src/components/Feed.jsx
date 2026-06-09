@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { formatRelativeTime, photoUrl } from "../lib/utils-frec";
 import { useAuth } from "../lib/auth";
 import { track, Events } from "../lib/analytics";
+import { shareInvite } from "../lib/invite";
 import NotificationsBanner from "./NotificationsBanner";
 
 const PAGE_FIRST = 20;
@@ -207,17 +208,37 @@ export default function Feed({ onSwitchToCities, maxItems, hideEmptyHint }) {
   if (items.length === 0) {
     if (hideEmptyHint) {
       return (
-        <p className="px-4 t-sub muted" data-testid="feed-quiet-hint" style={{ textAlign: "center", padding: "8px 0" }}>
-          All caught up. Your people haven&apos;t added anything recently.
-        </p>
+        <div className="px-4" data-testid="feed-quiet-hint" style={{ textAlign: "center", padding: "12px 16px" }}>
+          <p className="t-sub muted" style={{ marginBottom: 12 }}>
+            All caught up. Your people have not added anything recently.
+          </p>
+          <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+            <button
+              onClick={onSwitchToCities}
+              data-testid="feed-quiet-explore"
+              className="btn-pill btn-primary"
+              style={{ padding: "8px 16px", fontSize: 13 }}
+            >
+              Explore places
+            </button>
+            <button
+              onClick={() => shareInvite({ code: user?.invite_code, surface: "feed_empty" })}
+              data-testid="feed-quiet-invite"
+              className="btn-pill"
+              style={{ padding: "8px 16px", fontSize: 13, background: "rgba(10,132,255,0.10)", color: "#0A84FF" }}
+            >
+              Invite friends
+            </button>
+          </div>
+        </div>
       );
     }
     return (
       <EmptyState
         testId="feed-empty-quiet"
-        title="All caught up"
-        message="Your people haven't added anything recently."
-        ctaLabel="Explore cities →"
+        title="All caught up. Your people have not added anything recently."
+        message=""
+        ctaLabel="Explore places →"
         onCta={onSwitchToCities}
       />
     );

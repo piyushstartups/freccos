@@ -2,6 +2,7 @@ import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import Wordmark from "../components/Wordmark";
+import { hasSeenOnboarding } from "./Onboarding";
 
 export default function Splash() {
   const nav = useNavigate();
@@ -10,6 +11,7 @@ export default function Splash() {
     if (loading) return;
     const t = setTimeout(() => {
       if (user) nav("/explore", { replace: true });
+      else if (!hasSeenOnboarding()) nav("/onboarding", { replace: true });
       else nav("/login", { replace: true });
     }, 1400);
     return () => clearTimeout(t);

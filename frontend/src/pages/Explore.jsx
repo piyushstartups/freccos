@@ -9,8 +9,8 @@ import { Search, Bell, Sparkles } from "lucide-react";
 import { useAuth } from "../lib/auth";
 
 const SUBTABS = [
+  { id: "cities", label: "Places" },
   { id: "feed", label: "Feed" },
-  { id: "cities", label: "Cities" },
 ];
 
 export default function Explore() {
@@ -19,7 +19,7 @@ export default function Explore() {
   const [q, setQ] = useState("");
   const [unread, setUnread] = useState(0);
   const [subtab, setSubtab] = useState(() => {
-    try { return sessionStorage.getItem("freccos:explore:subtab") || "feed"; } catch { return "feed"; }
+    try { return sessionStorage.getItem("freccos:explore:subtab") || "cities"; } catch { return "cities"; }
   });
   const nav = useNavigate();
 

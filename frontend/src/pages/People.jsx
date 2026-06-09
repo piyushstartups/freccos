@@ -6,6 +6,7 @@ import { useAuth } from "../lib/auth";
 import { Search, UserPlus, UserCheck, Clock, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import { track, Events } from "../lib/analytics";
+import { shareInvite } from "../lib/invite";
 
 const TABS = [
   { id: "all", label: "All" },
@@ -61,11 +62,8 @@ export default function People() {
     } catch { toast.error("Couldn't update follow"); }
   };
 
-  const shareInvite = async () => {
-    const text = `Join me on Freccos! Use my invite code: ${user?.invite_code} https://freccos.com`;
-    track(Events.INVITE_CODE_SHARED, { surface: "people_tab" });
-    if (navigator.share) { try { await navigator.share({ text }); } catch { /* cancelled */ } }
-    else { try { await navigator.clipboard.writeText(text); toast.success("Invite copied"); } catch { toast("Copy failed"); } }
+  const handleShareInvite = async () => {
+    await shareInvite({ code: user?.invite_code, surface: "people_tab" });
   };
 
   // Filter the active tab's list. Search bar applies to all tabs.
@@ -107,7 +105,7 @@ export default function People() {
             <div className="t-title3">Invite a friend to Freccos</div>
             <div className="t-cap muted">Share your invite code · {user?.invite_code}</div>
           </div>
-          <button onClick={shareInvite} className="btn-pill btn-primary" style={{ padding: "8px 14px", fontSize: 13 }} data-testid="people-share-invite">
+          <button onClick={handleShareInvite} className="btn-pill btn-primary" style={{ padding: "8px 14px", fontSize: 13 }} data-testid="people-share-invite">
             Share
           </button>
         </div>

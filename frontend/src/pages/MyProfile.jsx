@@ -10,6 +10,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import PlaceSheet from "../components/PlaceSheet";
 import Wordmark from "../components/Wordmark";
 import ImpactSummaryCard from "../components/ImpactSummaryCard";
+import RecommendationsList from "../components/RecommendationsList";
 import { track, Events } from "../lib/analytics";
 import { CategoryTabs, CategoryChip } from "../components/CategoryChip";
 import { flagForCountry } from "../lib/flags";
@@ -19,6 +20,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatMonthYear, photoUrl } from "../lib/utils-frec";
+import { shareInvite } from "../lib/invite";
 
 const INSTAGRAM_GRADIENT = "linear-gradient(135deg,#f09433 0%,#e6683c 25%,#dc2743 50%,#cc2366 75%,#bc1888 100%)";
 
@@ -38,6 +40,8 @@ export default function MyProfile() {
   const [menuRecId, setMenuRecId] = useState(null);
   const [countryFilter, setCountryFilter] = useState(null);
   const [placeOpen, setPlaceOpen] = useState(null); // { group, cityId }
+  const [profileTab, setProfileTab] = useState("trips"); // 'trips' | 'recs'
+  const [recsCount, setRecsCount] = useState(null);
   // Confirm-dialog state: { type: 'trip'|'rec', payload: {...}, title, message }
   const [confirm, setConfirm] = useState(null);
 
@@ -81,11 +85,8 @@ export default function MyProfile() {
 
   useEffect(() => { if (openCityId) loadRecs(openCityId, category); /* eslint-disable-next-line */ }, [openCityId, category]);
 
-  const shareInvite = async () => {
-    const text = `Join me on Freccos! Use my invite code: ${user.invite_code} https://freccos.com`;
-    track(Events.INVITE_CODE_SHARED, { surface: "profile" });
-    if (navigator.share) try { await navigator.share({ text }); } catch { /* user cancelled */ }
-    else try { await navigator.clipboard.writeText(text); toast.success("Invite copied"); } catch { toast("Copy failed"); }
+  const handleShareInvite = async () => {
+    await shareInvite({ code: user.invite_code, surface: "profile" });
   };
 
   const requestDeleteRec = (rec) => {
@@ -175,6 +176,15 @@ export default function MyProfile() {
         <>
           <ImpactSummaryCard />
 
+          {/* Trips / Reccos tab switcher */}
+          <div className="px-4 pt-4" data-testid="profile-tabs">
+            <div style={{ background: "rgba(120,120,128,0.12)", borderRadius: 9999, padding: 4, display: "flex" }}>
+              <ProfileTabBtn id="trips" active={profileTab === "trips"} onClick={() => setProfileTab("trips")} label="Trips" />
+              <ProfileTabBtn id="recs" active={profileTab === "recs"} onClick={() => setProfileTab("recs")} label="Reccos" count={recsCount} />
+            </div>
+          </div>
+
+          {profileTab === "trips" && (<>
           <div className="px-4 pt-4 flex items-center justify-between">
             <h2 className="t-title2">Trips</h2>
             <button data-testid="me-add-trip" onClick={() => setAddTripOpen(true)} className="btn-pill"
@@ -195,8 +205,7 @@ export default function MyProfile() {
           )}
 
           {allCities.length > 0 && Object.entries(byCountry).map(([country, cities]) => (
-            <div key={country} style={{ marginTop: 28 }}>
-              <div className="px-4" style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+            <div key={country} style={{ marginTop: 28 }}>              <div className="px-4" style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
                 <h3 style={{ fontSize: 19, fontWeight: 700, color: "#1C1C1E", letterSpacing: "-0.2px", margin: 0 }}>
                   <span style={{ fontSize: 22, marginRight: 6 }}>{flagForCountry(country)}</span>
                   {country}
@@ -208,7 +217,6 @@ export default function MyProfile() {
               <div className="mx-4" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {cities.map((c) => {
                   const hasPhotos = c.photos && c.photos.length > 0;
-                  const totalSaves = c.total_save_count || 0;
                   return (
                     <button
                       key={c.id}
@@ -231,14 +239,6 @@ export default function MyProfile() {
                         ) : (
                           <div className="t-cap" style={{ marginTop: 2, color: "#0A84FF", fontWeight: 500 }}>
                             + Add recs
-                          </div>
-                        )}
-                        {totalSaves > 0 && (
-                          <div
-                            data-testid={`me-city-saves-${c.id}`}
-                            style={{ marginTop: 2, fontSize: 12, color: "#0A84FF", fontWeight: 500 }}
-                          >
-                            Saved by {totalSaves} {totalSaves === 1 ? "person" : "people"}
                           </div>
                         )}
                       </div>
@@ -266,10 +266,23 @@ export default function MyProfile() {
               </div>
             </div>
           ))}
+          </>)}
+
+          {profileTab === "recs" && (
+            <div data-testid="me-recs-tab" style={{ marginTop: 12 }}>
+              <RecommendationsList
+                userId={user.id}
+                isSelf
+                profileUser={{ id: user.id, name: user.name, profile_photo_url: user.profile_photo_url }}
+                onAddRec={() => { setEditingRec(null); setAddRecLockedCity(null); setAddRecOpen(true); }}
+                onEdit={(r) => { setEditingRec(r); setAddRecLockedCity(null); setAddRecOpen(true); }}
+                onDelete={(r) => requestDeleteRec(r)}
+                onCount={setRecsCount}
+              />
+            </div>
+          )}
         </>
       )}
-
-      {/* City detail */}
       {openCityId && cityOpen && (
         <div data-testid="me-city-detail">
           <div className="px-4 pt-3 flex items-center justify-between gap-2">
@@ -349,7 +362,7 @@ export default function MyProfile() {
           <div className="t-title3">Invite a friend to Freccos</div>
           <div className="t-cap muted">Share your invite code · <span data-testid="invite-code">{user.invite_code}</span></div>
         </div>
-        <button data-testid="invite-share" onClick={shareInvite} className="btn-pill btn-primary" style={{ padding: "8px 14px", fontSize: 13 }}>
+        <button data-testid="invite-share" onClick={handleShareInvite} className="btn-pill btn-primary" style={{ padding: "8px 14px", fontSize: 13 }}>
           Share
         </button>
       </div>
@@ -748,6 +761,23 @@ function SettingsSheet({ open, onClose, user, onUpdated, onLogout, onBlocked }) 
         )}
       </div>
     </BottomSheet>
+  );
+}
+
+function ProfileTabBtn({ id, active, count, onClick, label }) {
+  return (
+    <button data-testid={`profile-tab-${id}`} onClick={onClick}
+      style={{ flex: 1, padding: "8px 12px", border: "none",
+        background: active ? "#fff" : "transparent",
+        color: "#1C1C1E", fontWeight: 600, fontSize: 14, borderRadius: 9999,
+        boxShadow: active ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+        display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+      }}>
+      {label}
+      {typeof count === "number" && count > 0 && (
+        <span style={{ color: "#8E8E93", fontSize: 12, fontWeight: 600 }}>· {count}</span>
+      )}
+    </button>
   );
 }
 
