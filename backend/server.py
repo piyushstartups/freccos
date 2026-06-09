@@ -2281,6 +2281,49 @@ async def recover_onesignal_subscription(user: dict = Depends(current_user)):
     return {"ok": True, "found": len(subs), "added": added}
 
 
+@api.get("/users/me/onesignal-diag")
+async def onesignal_diag(user: dict = Depends(current_user)):
+    """Self-diagnostic for push delivery. Returns:
+    - what subscription IDs Freccos has stored for this user
+    - what OneSignal has on its side (via REST API lookup by external_id)
+    - the deliverable intersection (sub IDs that exist on both sides + opted in)
+    Use this to debug 'manual push works, triggered push doesn't' issues.
+    """
+    stored = user.get("onesignal_subscriptions") or []
+    stored_summary = [{
+        "subscription_id": s.get("subscription_id"),
+        "opted_in": s.get("opted_in"),
+        "last_seen": s.get("last_seen"),
+        "recovered": s.get("recovered", False),
+    } for s in stored]
+
+    onesignal_view = None
+    onesignal_subs = []
+    try:
+        payload = await osn.fetch_user_by_external_id(user["id"])
+        onesignal_view = "found" if payload else "not_found"
+        if payload:
+            onesignal_subs = osn.extract_subscription_ids(payload) or []
+    except Exception as e:
+        onesignal_view = f"error: {e}"
+
+    stored_ids = {s.get("subscription_id") for s in stored if s.get("opted_in") is not False}
+    onesignal_ids = {s.get("subscription_id") for s in onesignal_subs if s.get("opted_in")}
+    deliverable = sorted(stored_ids & onesignal_ids)
+    only_in_freccos = sorted(stored_ids - onesignal_ids)
+    only_in_onesignal = sorted(onesignal_ids - stored_ids)
+    return {
+        "user_id": user["id"],
+        "external_id_known_to_onesignal": onesignal_view,
+        "freccos_stored": stored_summary,
+        "onesignal_active_subscriptions": onesignal_subs,
+        "deliverable_subscription_ids": deliverable,
+        "only_in_freccos_db_stale": only_in_freccos,
+        "only_in_onesignal_not_synced_to_freccos": only_in_onesignal,
+        "notification_preferences": user.get("notification_preferences") or {},
+    }
+
+
 # ----------------------- Impact summary -----------------------
 
 @api.get("/me/impact")
