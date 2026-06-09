@@ -5,7 +5,6 @@ import { useAuth } from "../lib/auth";
 import Wordmark from "../components/Wordmark";
 import { Check, Loader2, Camera, ArrowLeft } from "lucide-react";
 import { track, Events } from "../lib/analytics";
-import EnableNotificationsCard from "../components/EnableNotificationsCard";
 import PostSignupInvite from "./PostSignupInvite";
 
 export default function Signup() {
@@ -102,11 +101,11 @@ export default function Signup() {
     } finally { setBusy(false); }
   };
 
-  const finishOnboarding = () => nav("/explore", { replace: true });
-
   // Step 4 (post-signup invite) takes over the entire screen — no progress header.
+  // This is the last step before /explore. The notification prompt is now triggered
+  // on first Feed visit (NotificationsBanner), not here.
   if (step === 4) {
-    return <PostSignupInvite onDone={() => setStep(5)} />;
+    return <PostSignupInvite onDone={() => nav("/explore", { replace: true })} />;
   }
 
   return (
@@ -118,12 +117,12 @@ export default function Signup() {
           <Wordmark size={34} color="#fff" />
         </div>
         <h1 className="t-title1 mt-3" style={{ color: "#fff" }}>Join your friends on Freccos</h1>
-        <p className="t-cap" style={{ color: "#8E8E93" }}>Step {step > 3 ? 4 : step} of 4</p>
+        <p className="t-cap" style={{ color: "#8E8E93" }}>Step {step} of 3</p>
         <div style={{ display: "flex", gap: 4, justifyContent: "center", marginTop: 10 }}>
-          {[1, 2, 3, 4].map((i) => (
+          {[1, 2, 3].map((i) => (
             <div key={i} style={{
               width: 28, height: 4, borderRadius: 2,
-              background: i <= (step > 3 ? 4 : step) ? "#0A84FF" : "rgba(255,255,255,0.15)",
+              background: i <= step ? "#0A84FF" : "rgba(255,255,255,0.15)",
               transition: "background 200ms ease-out",
             }} />
           ))}
@@ -279,16 +278,6 @@ export default function Signup() {
               Done
             </button>
           </div>
-        </div>
-      )}
-
-      {step === 5 && (
-        <div className="fade-in" style={{ flex: 1 }}>
-          <EnableNotificationsCard
-            variant="onboarding"
-            onEnabled={finishOnboarding}
-            onSkip={finishOnboarding}
-          />
         </div>
       )}
     </div>

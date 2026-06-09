@@ -162,10 +162,11 @@ function LandingScreen({ onStart }) {
 /* ───────────────────── Insight screens (1..3) ───────────────────── */
 function InsightScreen({ screen, text, onNext, onSkip }) {
   const isLast = screen === 3;
+  const ctaLabel = isLast ? "Get started" : "Next";
   return (
     <div className="ob-fade" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
       {/* Top row: Skip aligned right */}
-      <div style={{ display: "flex", justifyContent: "flex-end", height: 24 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", height: 22 }}>
         <button
           data-testid="onboarding-skip"
           onClick={onSkip}
@@ -174,7 +175,7 @@ function InsightScreen({ screen, text, onNext, onSkip }) {
             border: "none",
             color: "#8E8E93",
             fontFamily: "-apple-system, BlinkMacSystemFont, system-ui, sans-serif",
-            fontSize: 14,
+            fontSize: 15,
             cursor: "pointer",
             padding: 0,
           }}
@@ -183,46 +184,52 @@ function InsightScreen({ screen, text, onNext, onSkip }) {
         </button>
       </div>
 
-      {/* Logo mark */}
-      <div style={{ display: "flex", justifyContent: "center", marginTop: 6 }}>
-        <img
-          src="/freccos-logo.png"
-          alt=""
-          width={40}
-          height={40}
-          style={{ display: "block", borderRadius: 9 }}
-        />
+      {/* Spacer to push logo into upper quarter */}
+      <div style={{ flex: "0 0 8%" }} />
+
+      {/* Logo mark — 56x56 with rounded-square container */}
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <div
+          style={{
+            width: 56, height: 56, borderRadius: 14,
+            background: "#fff",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+          }}
+        >
+          <img src="/freccos-logo.png" alt="" width={56} height={56} style={{ display: "block", borderRadius: 14 }} />
+        </div>
       </div>
 
-      {/* Insight text — centred vertically in the remaining space */}
+      {/* Insight text — vertically centred in remaining space */}
       <div
         style={{
           flex: 1,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          padding: "0 8px",
         }}
       >
         <p
           data-testid={`onboarding-insight-${screen}`}
           style={{
             fontFamily: "-apple-system, BlinkMacSystemFont, system-ui, sans-serif",
-            fontSize: 34,
-            fontWeight: 300,
-            color: "#fff",
-            lineHeight: 1.3,
+            fontSize: 22,
+            fontWeight: 400,
+            color: "#FFFFFF",
+            lineHeight: 1.45,
+            letterSpacing: "-0.3px",
             textAlign: "center",
             margin: 0,
-            letterSpacing: -0.4,
+            maxWidth: 280,
           }}
         >
           {text}
         </p>
       </div>
 
-      {/* Dots */}
-      <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 22 }}>
+      {/* Dots — 6px, 8px gap */}
+      <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 24 }}>
         {[1, 2, 3].map((i) => {
           const active = i === screen;
           return (
@@ -230,10 +237,10 @@ function InsightScreen({ screen, text, onNext, onSkip }) {
               key={i}
               data-testid={`onboarding-dot-${i}`}
               style={{
-                width: 7,
-                height: 7,
+                width: 6,
+                height: 6,
                 borderRadius: 9999,
-                background: active ? "#fff" : "#8E8E93",
+                background: active ? "#FFFFFF" : "#8E8E93",
                 opacity: active ? 1 : 0.4,
                 transition: "all 200ms ease-out",
                 display: "inline-block",
@@ -243,15 +250,15 @@ function InsightScreen({ screen, text, onNext, onSkip }) {
         })}
       </div>
 
-      {/* CTA — Next (bottom right) on 1+2, Get started (full width) on 3 */}
-      {isLast ? (
+      {/* CTA — centred pill, auto width, NOT full width */}
+      <div style={{ display: "flex", justifyContent: "center" }}>
         <button
-          data-testid="onboarding-finish"
+          data-testid={isLast ? "onboarding-finish" : "onboarding-next"}
           onClick={onNext}
           className="ob-cta"
           style={{
-            width: "100%",
-            height: 48,
+            height: 50,
+            padding: "0 32px",
             borderRadius: 9999,
             background: "#0A84FF",
             color: "#fff",
@@ -260,35 +267,12 @@ function InsightScreen({ screen, text, onNext, onSkip }) {
             fontSize: 16,
             fontWeight: 600,
             cursor: "pointer",
-            transition: "transform 150ms ease-out",
+            transition: "transform 280ms cubic-bezier(0.2, 0.9, 0.3, 1.1)",
           }}
         >
-          Get started
+          {ctaLabel}
         </button>
-      ) : (
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <button
-            data-testid="onboarding-next"
-            onClick={onNext}
-            className="ob-cta"
-            style={{
-              height: 48,
-              padding: "0 28px",
-              borderRadius: 9999,
-              background: "#0A84FF",
-              color: "#fff",
-              border: "none",
-              fontFamily: "-apple-system, BlinkMacSystemFont, system-ui, sans-serif",
-              fontSize: 16,
-              fontWeight: 600,
-              cursor: "pointer",
-              transition: "transform 150ms ease-out",
-            }}
-          >
-            Next
-          </button>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
