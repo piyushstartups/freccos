@@ -780,7 +780,7 @@ async def register(req: RegisterReq, response: Response):
         "password_hash": hash_password(req.password),
         "profile_photo_url": None, "bio": "",
         "invite_code": new_code,
-        "is_private": True,  # Private by default — users can switch to public in Settings
+        "is_private": False,  # Public by default — users can switch to private in Settings
         "following": following,
         "followers": followers,
         "auth_provider": "password", "google_id": None,
@@ -900,7 +900,7 @@ async def google_session(req: GoogleSessionReq, response: Response):
             "id": user_id, "name": name, "email": email,
             "password_hash": None, "profile_photo_url": picture, "bio": "",
             "invite_code": new_code,
-            "is_private": True,  # Private by default
+            "is_private": False,  # Public by default
             "following": [], "followers": [],
             "auth_provider": "google", "google_id": data.get("id"),
             "created_at": now_iso,
