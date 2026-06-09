@@ -2232,6 +2232,11 @@ async def upsert_onesignal_token(req: OneSignalTokenReq, user: dict = Depends(cu
                 "created_at": now,
             }}},
         )
+        logger.info("[onesignal] NEW subscription stored for user=%s sub_id=%s opted_in=%s",
+                    user["id"], sub_id[:8] + "…", bool(req.opted_in))
+    else:
+        logger.info("[onesignal] subscription refreshed for user=%s sub_id=%s opted_in=%s",
+                    user["id"], sub_id[:8] + "…", bool(req.opted_in))
     return {"ok": True, "subscription_id": sub_id}
 
 

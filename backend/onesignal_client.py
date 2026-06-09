@@ -86,7 +86,17 @@ async def _post_notification(payload: dict) -> Optional[dict]:
         if r.status_code not in (200, 202):
             logger.warning("[onesignal] send failed %s: %s", r.status_code, r.text[:300])
             return None
-        return r.json()
+        data = r.json()
+        # Surface delivery diagnostics — recipients=0 means OneSignal accepted the
+        # call but no devices matched (stale sub_ids, missing external_id, etc.).
+        recipients = data.get("recipients")
+        errors = data.get("errors")
+        if recipients == 0 or errors:
+            logger.warning("[onesignal] accepted but undelivered: recipients=%s errors=%s payload_keys=%s",
+                           recipients, errors, list(payload.keys()))
+        else:
+            logger.info("[onesignal] delivered: recipients=%s id=%s", recipients, data.get("id"))
+        return data
     except Exception as e:
         logger.exception("[onesignal] send exception: %s", e)
         return None
@@ -224,10 +234,19 @@ async def _send_to_user(
 
     # Prefer subscription_ids of opted-in devices. Fall back to external_id alias.
     sub_ids: list[str] = []
+    all_sub_ids: list[str] = []
     for s in (user.get("onesignal_subscriptions") or []):
         sid = (s or {}).get("subscription_id")
-        if sid and (s.get("opted_in") is not False):  # default to opted-in if flag missing
+        if not sid:
+            continue
+        all_sub_ids.append(sid)
+        if s.get("opted_in") is not False:  # default to opted-in if flag missing
             sub_ids.append(sid)
+
+    logger.info(
+        "[onesignal] sending pref=%s to user=%s — stored_subs=%d opted_in_subs=%d",
+        pref_key, user_id, len(all_sub_ids), len(sub_ids),
+    )
 
     payload = {
         "headings": {"en": heading},
@@ -236,13 +255,47 @@ async def _send_to_user(
     }
     if sub_ids:
         payload["include_subscription_ids"] = sub_ids
+        targeting = "subscription_ids"
     else:
         payload["include_aliases"] = {"external_id": [user_id]}
+        payload["target_channel"] = "push"  # required when targeting aliases
+        targeting = "external_id"
 
     if url_path:
         payload["url"] = _abs_url(url_path)
         payload["web_url"] = _abs_url(url_path)
-    await _post_notification(payload)
+
+    resp = await _post_notification(payload)
+
+    # If we targeted sub_ids and OneSignal couldn't deliver to any of them, the
+    # stored IDs are stale (typical after a service-worker scope change). Drop
+    # them so future sends use the fresh external_id path, and retry once now.
+    if resp and sub_ids and (resp.get("recipients") == 0 or resp.get("errors")):
+        logger.warning(
+            "[onesignal] stale sub_ids for user=%s — pruning %d and retrying via external_id",
+            user_id, len(sub_ids),
+        )
+        try:
+            await db.users.update_one(
+                {"id": user_id},
+                {"$pull": {"onesignal_subscriptions": {"subscription_id": {"$in": sub_ids}}}},
+            )
+        except Exception as e:
+            logger.exception("[onesignal] prune stale subs failed: %s", e)
+        retry_payload = {
+            "headings": {"en": heading},
+            "contents": {"en": body},
+            "data": {"pref_key": pref_key, "kind": kind or pref_key},
+            "include_aliases": {"external_id": [user_id]},
+            "target_channel": "push",
+        }
+        if url_path:
+            retry_payload["url"] = _abs_url(url_path)
+            retry_payload["web_url"] = _abs_url(url_path)
+        await _post_notification(retry_payload)
+        targeting = "external_id (retry)"
+
+    logger.info("[onesignal] sent pref=%s user=%s via=%s", pref_key, user_id, targeting)
 
 
 # -------- Burst / dedup helpers --------
