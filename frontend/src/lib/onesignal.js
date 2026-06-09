@@ -61,9 +61,11 @@ export function initOneSignal() {
     try {
       await OneSignal.init({
         appId: APP_ID,
-        // Dedicated subdirectory scope avoids collision with CRA /sw.js root scope.
-        serviceWorkerPath: "push/onesignal/OneSignalSDKWorker.js",
-        serviceWorkerParam: { scope: "/push/onesignal/" },
+        // Worker must live at root so the scope ("/") covers the entire app.
+        // CRA serves /public/OneSignalSDKWorker.js as a static asset at root,
+        // bypassing the SPA catch-all that previously returned index.html.
+        serviceWorkerPath: "/OneSignalSDKWorker.js",
+        serviceWorkerParam: { scope: "/" },
         // We drive the permission UX entirely from React. Suppress native widgets.
         notifyButton: { enable: false },
         promptOptions: { slidedown: { enabled: false } },
