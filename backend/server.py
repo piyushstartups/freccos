@@ -2237,25 +2237,34 @@ async def upsert_onesignal_token(req: OneSignalTokenReq, user: dict = Depends(cu
     else:
         logger.info("[onesignal] subscription refreshed for user=%s sub_id=%s opted_in=%s",
                     user["id"], sub_id[:8] + "…", bool(req.opted_in))
+    # Belt-and-braces: ensure OneSignal has this subscription linked to the
+    # Freccos user.id as external_id, even if the SDK never managed to do it.
+    # Best-effort and idempotent — failure here doesn't break the upsert.
+    try:
+        await osn.attach_external_id_to_subscription(sub_id, user["id"])
+    except Exception as e:
+        logger.exception("[onesignal] external_id attach failed: %s", e)
     return {"ok": True, "subscription_id": sub_id}
 
 
 @api.post("/users/me/onesignal-recover")
 async def recover_onesignal_subscription(user: dict = Depends(current_user)):
-    """Recovery endpoint for users where the SDK got stuck on a 409 conflict.
-
-    Calls OneSignal REST API GET /apps/{appId}/users/by/external_id/{user_id}
-    and merges every push subscription it finds into users.onesignal_subscriptions[].
-    Idempotent and safe to call on every login.
+    """Recovery endpoint. Pulls every push subscription OneSignal has for this
+    Freccos user (by external_id) and merges into users.onesignal_subscriptions[].
+    Also re-links each subscription's external_id alias as a belt-and-braces step
+    so triggered sends via `include_aliases.external_id` succeed. Idempotent.
     """
     payload = await osn.fetch_user_by_external_id(user["id"])
     if not payload:
-        return {"ok": True, "found": 0, "added": 0, "reason": "no_onesignal_user"}
+        logger.info("[onesignal] recover: external_id=%s not found on OneSignal", user["id"])
+        return {"ok": True, "found": 0, "added": 0, "linked": 0, "reason": "no_onesignal_user"}
     subs = osn.extract_subscription_ids(payload)
     if not subs:
-        return {"ok": True, "found": 0, "added": 0, "reason": "no_push_subscriptions"}
+        logger.info("[onesignal] recover: external_id=%s exists but no push subs", user["id"])
+        return {"ok": True, "found": 0, "added": 0, "linked": 0, "reason": "no_push_subscriptions"}
     now = iso(now_utc())
     added = 0
+    linked = 0
     for s in subs:
         sub_id = s["subscription_id"]
         res = await db.users.update_one(
@@ -2278,7 +2287,47 @@ async def recover_onesignal_subscription(user: dict = Depends(current_user)):
                 }}},
             )
             added += 1
-    return {"ok": True, "found": len(subs), "added": added}
+        # Re-attach external_id alias just in case OneSignal lost it.
+        if await osn.attach_external_id_to_subscription(sub_id, user["id"]):
+            linked += 1
+    logger.info("[onesignal] recover complete user=%s found=%d added=%d linked=%d",
+                user["id"], len(subs), added, linked)
+    return {"ok": True, "found": len(subs), "added": added, "linked": linked}
+
+
+@api.post("/users/me/onesignal-link/{subscription_id}")
+async def manually_link_subscription(subscription_id: str, user: dict = Depends(current_user)):
+    """Force-link a given OneSignal subscription_id to this Freccos user.id as
+    external_id, AND store it in the user's onesignal_subscriptions[] so triggers
+    target it directly. Use when you can see the subscription on the OneSignal
+    dashboard but Freccos doesn't know about it (or vice versa).
+    """
+    sub_id = (subscription_id or "").strip()
+    if not sub_id:
+        raise HTTPException(status_code=400, detail="subscription_id required")
+    linked = await osn.attach_external_id_to_subscription(sub_id, user["id"])
+    now = iso(now_utc())
+    res = await db.users.update_one(
+        {"id": user["id"], "onesignal_subscriptions.subscription_id": sub_id},
+        {"$set": {
+            "onesignal_subscriptions.$.opted_in": True,
+            "onesignal_subscriptions.$.last_seen": now,
+        }},
+    )
+    if res.matched_count == 0:
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$push": {"onesignal_subscriptions": {
+                "subscription_id": sub_id,
+                "opted_in": True,
+                "last_seen": now,
+                "created_at": now,
+                "manually_linked": True,
+            }}},
+        )
+    logger.info("[onesignal] manual link user=%s sub=%s linked=%s",
+                user["id"], sub_id[:8] + "…", linked)
+    return {"ok": True, "subscription_id": sub_id, "linked_external_id": linked}
 
 
 @api.get("/users/me/onesignal-diag")

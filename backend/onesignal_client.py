@@ -124,6 +124,35 @@ async def update_tags_by_external_id(external_id: str, tags: dict) -> None:
         logger.exception("[onesignal] tag patch exception: %s", e)
 
 
+async def attach_external_id_to_subscription(subscription_id: str, external_id: str) -> bool:
+    """Force-link a OneSignal subscription to a Freccos user.id as external_id.
+
+    This belt-and-braces step handles the case where the v16 SDK opted the
+    browser in BEFORE `OneSignal.login(externalId)` was called — the result is
+    a subscription that exists on OneSignal with no external_id link, which
+    means our trigger sends via `include_aliases.external_id` will return
+    `recipients=0`. Calling this on every fresh subscription guarantees the
+    link is established server-side regardless of SDK state on the device.
+    """
+    if not APP_ID or not API_KEY or not subscription_id or not external_id:
+        return False
+    headers = {"Authorization": f"Key {API_KEY}", "Content-Type": "application/json"}
+    url = f"/apps/{APP_ID}/users/by/subscription_id/{subscription_id}/identity"
+    body = {"identity": {"external_id": str(external_id)}}
+    try:
+        async with httpx.AsyncClient(base_url=ONESIGNAL_BASE, timeout=10.0) as c:
+            r = await c.patch(url, json=body, headers=headers)
+        if r.status_code in (200, 201, 202):
+            logger.info("[onesignal] linked external_id=%s to sub=%s", external_id, subscription_id[:8] + "…")
+            return True
+        logger.warning("[onesignal] attach_external_id %s/%s -> %s: %s",
+                       external_id, subscription_id[:8] + "…", r.status_code, r.text[:200])
+        return False
+    except Exception as e:
+        logger.exception("[onesignal] attach_external_id exception: %s", e)
+        return False
+
+
 async def fetch_user_by_external_id(external_id: str) -> Optional[dict]:
     """GET the OneSignal user record by external_id. Returns the parsed payload
     (with .subscriptions[]) or None if the user doesn't exist on OneSignal yet.
