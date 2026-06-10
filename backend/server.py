@@ -2249,23 +2249,28 @@ async def upsert_onesignal_token(req: OneSignalTokenReq, user: dict = Depends(cu
 
 @api.post("/users/me/onesignal-recover")
 async def recover_onesignal_subscription(user: dict = Depends(current_user)):
-    """Recovery endpoint. Pulls every push subscription OneSignal has for this
-    Freccos user (by external_id) and merges into users.onesignal_subscriptions[].
-    Also re-links each subscription's external_id alias as a belt-and-braces step
-    so triggered sends via `include_aliases.external_id` succeed. Idempotent.
+    """Recovery sweep. Reconciles users.onesignal_subscriptions[] with whatever
+    OneSignal currently knows about this user (queried by external_id).
+
+    On every call:
+      • Pulls every push subscription OneSignal has for this Freccos user.id.
+      • For each subscription: upserts it into Freccos DB and force-links the
+        external_id alias (two-step: PATCH identity → fallback to subscription
+        transfer when OneSignal returns a conflict because of a split identity).
+      • Prunes any subscription stored in Freccos DB that OneSignal no longer
+        reports as active.
+    Returns { ok, found, added, linked, pruned }. Idempotent.
     """
     payload = await osn.fetch_user_by_external_id(user["id"])
-    if not payload:
-        logger.info("[onesignal] recover: external_id=%s not found on OneSignal", user["id"])
-        return {"ok": True, "found": 0, "added": 0, "linked": 0, "reason": "no_onesignal_user"}
-    subs = osn.extract_subscription_ids(payload)
-    if not subs:
-        logger.info("[onesignal] recover: external_id=%s exists but no push subs", user["id"])
-        return {"ok": True, "found": 0, "added": 0, "linked": 0, "reason": "no_push_subscriptions"}
+    onesignal_subs = osn.extract_subscription_ids(payload) if payload else []
+    onesignal_sub_ids = {s["subscription_id"] for s in onesignal_subs}
     now = iso(now_utc())
     added = 0
     linked = 0
-    for s in subs:
+    pruned = 0
+
+    # Add / refresh
+    for s in onesignal_subs:
         sub_id = s["subscription_id"]
         res = await db.users.update_one(
             {"id": user["id"], "onesignal_subscriptions.subscription_id": sub_id},
@@ -2287,12 +2292,24 @@ async def recover_onesignal_subscription(user: dict = Depends(current_user)):
                 }}},
             )
             added += 1
-        # Re-attach external_id alias just in case OneSignal lost it.
+        # Force-link external_id (PATCH identity → fallback transfer).
         if await osn.attach_external_id_to_subscription(sub_id, user["id"]):
             linked += 1
-    logger.info("[onesignal] recover complete user=%s found=%d added=%d linked=%d",
-                user["id"], len(subs), added, linked)
-    return {"ok": True, "found": len(subs), "added": added, "linked": linked}
+
+    # Prune Freccos-only sub IDs (dead on OneSignal's side)
+    stored = (user.get("onesignal_subscriptions") or [])
+    stale_ids = [s.get("subscription_id") for s in stored
+                 if s.get("subscription_id") and s["subscription_id"] not in onesignal_sub_ids]
+    if stale_ids:
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$pull": {"onesignal_subscriptions": {"subscription_id": {"$in": stale_ids}}}},
+        )
+        pruned = len(stale_ids)
+
+    logger.info("[onesignal] recover user=%s found=%d added=%d linked=%d pruned=%d",
+                user["id"], len(onesignal_subs), added, linked, pruned)
+    return {"ok": True, "found": len(onesignal_subs), "added": added, "linked": linked, "pruned": pruned}
 
 
 @api.post("/users/me/onesignal-link/{subscription_id}")

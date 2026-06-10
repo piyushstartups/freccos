@@ -1,8 +1,20 @@
-/* OneSignal Web Push v16 wrapper.
+/* OneSignal Web Push v16 — strict-sequence wrapper.
  *
- * The SDK script is loaded from index.html. We use the `OneSignalDeferred`
- * queue documented at https://documentation.onesignal.com/docs/en/web-sdk-reference
- * so every helper is safe to call before the SDK has finished loading.
+ * The strict ordering enforced everywhere:
+ *   1. OneSignal.init()           ── completes
+ *   2. OneSignal.login(userId)    ── completes and resolves
+ *   3. OneSignal.User.PushSubscription.optIn()   ── only after login resolves
+ *   4. Capture subscription id
+ *   5. POST id to /api/users/me/onesignal-token  ── backend force-links external_id
+ *
+ * Anything that violates that sequence (eg. capturing a sub id before login()
+ * has resolved) creates a "split identity" on OneSignal's side: the device gets
+ * a real subscription but it's anchored to an anonymous OneSignal user rather
+ * than to record(external_id=freccos.id). The backend transfer-subscription
+ * endpoint can repair this, but enforcing the order client-side is faster.
+ *
+ * SDK script is loaded from index.html. We use the OneSignalDeferred queue
+ * (FIFO sequential) — every helper is safe to call before SDK script loads.
  */
 
 const APP_ID = process.env.REACT_APP_ONESIGNAL_APP_ID || "";
@@ -15,16 +27,13 @@ export function isIos() {
 }
 export function isStandalonePwa() {
   if (typeof window === "undefined") return false;
-  // iOS Safari sets navigator.standalone; Android Chrome uses display-mode media query.
   if (window.navigator.standalone === true) return true;
   if (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) return true;
   return false;
 }
-// On iOS, web push only works once the PWA is installed to the home screen.
 export function isIosWebPushBlocked() {
   return isIos() && !isStandalonePwa();
 }
-// Web push at all? Some browsers (eg. Safari macOS < 16.4) lack Notification API.
 export function isWebPushSupported() {
   if (typeof window === "undefined") return false;
   if (!("Notification" in window)) return false;
@@ -32,16 +41,14 @@ export function isWebPushSupported() {
   return true;
 }
 
-// -------- SDK queue helper --------
-
+// -------- Internal: deferred-queue helper --------
+//
+// Every helper that needs the SDK schedules its work via `withOneSignal`. The
+// SDK guarantees handlers run sequentially in the order they were pushed, so
+// init → login → optIn → capture is guaranteed by call order alone.
 function withOneSignal(fn) {
   return new Promise((resolve, reject) => {
-    if (!APP_ID) {
-      // No app id configured — silently no-op so the app keeps working.
-      resolve(undefined);
-      return;
-    }
-    if (typeof window === "undefined") { resolve(undefined); return; }
+    if (!APP_ID || typeof window === "undefined") { resolve(undefined); return; }
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     window.OneSignalDeferred.push(async function (OneSignal) {
       try { resolve(await fn(OneSignal)); }
@@ -50,42 +57,69 @@ function withOneSignal(fn) {
   });
 }
 
-// -------- Init (called once from App on mount) --------
+const log = (...args) => console.log("[OneSignal]", ...args); // eslint-disable-line no-console
+const warn = (...args) => console.warn("[OneSignal]", ...args); // eslint-disable-line no-console
+
+// -------- Step 1: init (called once from App on mount) --------
 
 let initStarted = false;
+let initDone = false;
+const initWaiters = [];
+function _signalInitDone() {
+  initDone = true;
+  while (initWaiters.length) { try { initWaiters.shift()(); } catch { /* ignore */ } }
+}
+function _awaitInit() {
+  if (initDone) return Promise.resolve();
+  return new Promise((res) => initWaiters.push(res));
+}
+
 export function initOneSignal() {
   if (initStarted || !APP_ID || typeof window === "undefined") return;
   initStarted = true;
+  log("step 1/4 init: enqueuing init…");
   window.OneSignalDeferred = window.OneSignalDeferred || [];
   window.OneSignalDeferred.push(async function (OneSignal) {
     try {
       await OneSignal.init({
         appId: APP_ID,
-        // Worker must live at root so the scope ("/") covers the entire app.
-        // CRA serves /public/OneSignalSDKWorker.js as a static asset at root,
-        // bypassing the SPA catch-all that previously returned index.html.
         serviceWorkerPath: "/OneSignalSDKWorker.js",
         serviceWorkerParam: { scope: "/" },
-        // We drive the permission UX entirely from React. Suppress native widgets.
         notifyButton: { enable: false },
         promptOptions: { slidedown: { enabled: false } },
         allowLocalhostAsSecureOrigin: true,
       });
+      log("step 1/4 init: complete");
     } catch (e) {
-      // Don't crash the app if OneSignal can't initialise.
-      console.warn("[OneSignal] init failed:", e); // eslint-disable-line no-console
+      warn("init failed:", e);
+    } finally {
+      _signalInitDone();
     }
   });
 }
 
-// -------- Identity / Tagging --------
+// -------- Step 2: login --------
 
 export function loginOneSignal(externalId) {
-  return withOneSignal(async (OneSignal) => { await OneSignal.login(externalId); });
+  return withOneSignal(async (OneSignal) => {
+    if (!externalId) return;
+    log("step 2/4 login: calling OneSignal.login(", externalId, ")");
+    try {
+      await OneSignal.login(String(externalId));
+      log("step 2/4 login: resolved");
+    } catch (e) {
+      warn("login failed:", e);
+    }
+  });
 }
+
 export function logoutOneSignal() {
-  return withOneSignal(async (OneSignal) => { await OneSignal.logout(); });
+  return withOneSignal(async (OneSignal) => {
+    try { await OneSignal.logout(); log("logout: complete"); }
+    catch (e) { warn("logout failed:", e); }
+  });
 }
+
 export function setOneSignalTags(tags) {
   return withOneSignal(async (OneSignal) => {
     const flat = {};
@@ -97,158 +131,130 @@ export function setOneSignalTags(tags) {
   });
 }
 
-// -------- Permission --------
+// -------- Step 3 + 4 + 5: optIn → capture → POST --------
 
-async function _captureSubscription(OneSignal) {
-  // Pull the subscription id (v16: OneSignal.User.PushSubscription.id) and POST
-  // it to Freccos so the backend can target this device directly. Retries up to
-  // 10 times because the id can be assigned asynchronously after `optIn()`.
-  for (let attempt = 0; attempt < 10; attempt += 1) {
+async function _captureAndStore(OneSignal) {
+  // Poll for the subscription id (assigned asynchronously by the SDK).
+  let id = null;
+  let optedIn = false;
+  for (let attempt = 0; attempt < 15; attempt += 1) {
     try {
       const sub = OneSignal.User?.PushSubscription;
-      const id = sub?.id;
-      const optedIn = !!sub?.optedIn;
-      if (id) {
-        try {
-          const { default: api } = await import("./api");
-          await api.post("/users/me/onesignal-token", { subscription_id: id, opted_in: optedIn });
-        } catch (e) {
-          // Best-effort; the backend can re-sync on next login. Log once.
-          console.warn("[OneSignal] sub upload failed:", e); // eslint-disable-line no-console
-        }
-        return id;
-      }
+      id = sub?.id || null;
+      optedIn = !!sub?.optedIn;
+      if (id) break;
     } catch { /* ignore */ }
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, 500));
   }
-  return null;
+  if (!id) { warn("step 4/4 capture: no subscription id after 15 attempts"); return null; }
+  log("step 4/4 capture: id =", id, "optedIn =", optedIn);
+  try {
+    const { default: api } = await import("./api");
+    const { data } = await api.post("/users/me/onesignal-token", {
+      subscription_id: id, opted_in: optedIn,
+    });
+    log("step 5/5 POST /api/users/me/onesignal-token →", data);
+  } catch (e) {
+    warn("POST onesignal-token failed:", e?.message || e);
+  }
+  return id;
 }
 
-async function _attachSubscriptionListener(OneSignal) {
-  // Re-sync the backend whenever the subscription state changes (e.g. token
-  // refresh, user toggling browser permission, multi-device login).
+async function _attachListener(OneSignal) {
   try {
-    if (OneSignal._freccosSubListenerAttached) return;
-    OneSignal._freccosSubListenerAttached = true;
+    if (OneSignal._freccosSubListener) return;
+    OneSignal._freccosSubListener = true;
     OneSignal.User?.PushSubscription?.addEventListener?.("change", async () => {
-      await _captureSubscription(OneSignal);
+      log("PushSubscription change — re-capturing…");
+      await _captureAndStore(OneSignal);
     });
   } catch { /* ignore */ }
 }
 
 export async function getPermissionStatus() {
   return withOneSignal(async (OneSignal) => {
-    try { return await OneSignal.Notifications.permission ? "granted" : (Notification?.permission || "default"); }
+    try { return (await OneSignal.Notifications.permission) ? "granted" : (Notification?.permission || "default"); }
     catch { return Notification?.permission || "default"; }
   });
 }
+
+// User-initiated prompt path (NotificationsBanner / settings).
 export async function requestPushPermission() {
   return withOneSignal(async (OneSignal) => {
     try {
       await OneSignal.Notifications.requestPermission();
       const granted = OneSignal.Notifications.permission;
+      log("requestPermission →", granted ? "granted" : "denied");
       if (granted) {
-        // Ensure subscription is active, then push the id to Freccos.
-        try { await OneSignal.User.PushSubscription.optIn(); } catch { /* may already be opted in */ }
-        await _attachSubscriptionListener(OneSignal);
-        await _captureSubscription(OneSignal);
+        try {
+          log("step 3/5 optIn: calling…");
+          await OneSignal.User.PushSubscription.optIn();
+          log("step 3/5 optIn: resolved");
+        } catch (e) { warn("optIn failed:", e); }
+        await _attachListener(OneSignal);
+        await _captureAndStore(OneSignal);
       }
       return granted ? "granted" : (Notification?.permission || "default");
-    } catch { return Notification?.permission || "default"; }
+    } catch (e) { warn("requestPushPermission failed:", e); return Notification?.permission || "default"; }
   });
 }
+
 export async function isOptedIn() {
   return withOneSignal(async (OneSignal) => {
     try { return !!OneSignal.User?.PushSubscription?.optedIn; }
     catch { return false; }
   });
 }
+
 export async function setOptIn(value) {
   return withOneSignal(async (OneSignal) => {
     try {
       if (value) await OneSignal.User.PushSubscription.optIn();
       else await OneSignal.User.PushSubscription.optOut();
-      await _captureSubscription(OneSignal);
-    } catch (e) { console.warn("[OneSignal] optIn/Out failed:", e); } // eslint-disable-line no-console
+      await _captureAndStore(OneSignal);
+    } catch (e) { warn("setOptIn failed:", e); }
   });
 }
 
-// Called after every successful Freccos login.
+// -------- Master flow — called on every successful Freccos login --------
 //
-// Three responsibilities:
-//  1. Attach a 'change' listener so future subscription updates auto-sync.
-//  2. RECOVERY PATH — if the browser already has `Notification.permission`
-//     granted but OneSignal never registered a subscription (this happens for
-//     users who allowed notifications before the OneSignal SDK was deployed,
-//     so the dashboard shows "Never Subscribed - No Push Token"), silently
-//     call `PushSubscription.optIn()` to register the existing browser permission.
-//     Zero user interaction — fully transparent.
-//  3. POST the resulting subscription id to the Freccos backend.
-//
-// If the SDK is stuck on a 409 (OneSignal already has a record for this user
-// but the SDK's local state has a conflicting onesignal_id), we recover by:
-//  - calling `OneSignal.logout()` to drop the stale local identity,
-//  - re-`login()`-ing with the Freccos user id,
-//  - `optIn()`-ing again to force a fresh subscription registration,
-//  - and as a final fallback, asking our backend to fetch existing
-//    subscriptions from OneSignal's REST API by external_id.
-export function syncSubscriptionWithBackend(externalId) {
+// Strict sequence: wait for init, then login(externalId) resolves, THEN if the
+// browser already granted permission, optIn + capture + POST. Anything that
+// requires user interaction (first-time permission grant) goes through
+// requestPushPermission() instead.
+export function bindUserToOneSignal(externalId) {
   return withOneSignal(async (OneSignal) => {
-    await _attachSubscriptionListener(OneSignal);
-
-    // Silent recovery: browser is granted but OneSignal isn't opted-in yet
+    if (!externalId) return;
+    // OneSignalDeferred handlers run sequentially; init was enqueued first, so by
+    // the time this handler runs init is done. We still gate explicitly to be safe.
+    await _awaitInit();
+    log("bind: starting strict sequence for user", externalId);
     try {
-      const browserGranted = typeof Notification !== "undefined" && Notification.permission === "granted";
-      const sub = OneSignal.User?.PushSubscription;
-      const onesignalOptedIn = !!sub?.optedIn;
-      const onesignalHasId = !!sub?.id;
-      if (browserGranted && !onesignalOptedIn && !onesignalHasId) {
-        try {
-          await OneSignal.User.PushSubscription.optIn();
-        } catch (e) {
-          // optIn can throw if the SDK doesn't yet have a service-worker registration;
-          // the 'change' listener will pick the id up moments later anyway.
-          console.warn("[OneSignal] silent optIn failed:", e); // eslint-disable-line no-console
-        }
-      }
-    } catch { /* ignore */ }
-
-    // Try once with the current state. If we capture an id, great.
-    let capturedId = await _captureSubscription(OneSignal);
-
-    // 409 recovery — happens when OneSignal already has a user record but the
-    // SDK's local anonymous onesignal_id conflicts with it. Symptom: after
-    // optIn() + polling, no subscription id ever materializes locally.
-    if (!capturedId && externalId) {
-      try {
-        await OneSignal.logout();
-      } catch (e) {
-        console.warn("[OneSignal] logout failed during recovery:", e); // eslint-disable-line no-console
-      }
-      try {
-        await OneSignal.login(externalId);
-      } catch (e) {
-        console.warn("[OneSignal] re-login failed during recovery:", e); // eslint-disable-line no-console
-      }
-      try {
-        await OneSignal.User.PushSubscription.optIn();
-      } catch (e) {
-        console.warn("[OneSignal] post-recovery optIn failed:", e); // eslint-disable-line no-console
-      }
-      capturedId = await _captureSubscription(OneSignal);
+      await OneSignal.login(String(externalId));
+      log("bind: login resolved");
+    } catch (e) {
+      warn("bind: login failed:", e);
     }
+    await _attachListener(OneSignal);
 
-    // Final fallback — ask the backend to fetch subscriptions from OneSignal
-    // server-side via GET /apps/{appId}/users/by/external_id/{userId}. This
-    // covers cases where the SDK is fundamentally unable to recover client-side
-    // (eg. permission state is fine but onesignal_id is unrecoverable here).
-    if (!capturedId) {
+    // If the browser permission is already granted, silently re-engage the
+    // SDK (covers refresh-after-permission, existing-user-after-deploy, etc.)
+    const browserGranted = typeof Notification !== "undefined" && Notification.permission === "granted";
+    const sub = OneSignal.User?.PushSubscription;
+    const onesignalOptedIn = !!sub?.optedIn;
+    if (browserGranted && !onesignalOptedIn) {
       try {
-        const { default: api } = await import("./api");
-        await api.post("/users/me/onesignal-recover");
+        log("bind: silent optIn (browser already granted)…");
+        await OneSignal.User.PushSubscription.optIn();
+        log("bind: silent optIn resolved");
       } catch (e) {
-        // Silent — backend logs the underlying reason.
+        warn("bind: silent optIn failed:", e);
       }
+    }
+    if (browserGranted) {
+      await _captureAndStore(OneSignal);
+    } else {
+      log("bind: skipping capture (browser permission not granted yet)");
     }
   });
 }
@@ -262,3 +268,7 @@ export async function getPushState() {
   const optedIn = await isOptedIn();
   return { supported: true, permission, optedIn, iosBlocked: isIosWebPushBlocked() };
 }
+
+// Backwards-compat shim — callers used to call syncSubscriptionWithBackend.
+// Route them through the new strict-sequence bind so existing call sites work.
+export const syncSubscriptionWithBackend = bindUserToOneSignal;

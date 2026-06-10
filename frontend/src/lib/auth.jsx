@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import api from "./api";
 import {
-  initOneSignal, loginOneSignal, logoutOneSignal, setOneSignalTags, syncSubscriptionWithBackend,
+  initOneSignal, bindUserToOneSignal, logoutOneSignal, setOneSignalTags,
 } from "./onesignal";
 
 const AuthCtx = createContext(null);
@@ -42,10 +42,14 @@ export function AuthProvider({ children }) {
   // Identify + tag the user on every successful /me load (and clear on logout).
   useEffect(() => {
     if (user && user.id) {
-      loginOneSignal(user.id).catch(() => {});
-      // After identifying, push the current subscription id (if we have permission)
-      // and wire a listener so future subscription changes auto-sync to the backend.
-      syncSubscriptionWithBackend(user.id).catch(() => {});
+      // Strict-sequence bind: init → login(user.id) → optIn (if granted) →
+      // capture sub id → POST /api/users/me/onesignal-token (which force-links
+      // external_id via the transfer endpoint on the backend).
+      bindUserToOneSignal(user.id).catch(() => {});
+      // Recovery sweep on every app open — heals any split identity from a
+      // previous session by transferring stray subscriptions to this user
+      // record. Idempotent and cheap; safe to call on every refresh.
+      api.post("/users/me/onesignal-recover").catch(() => {});
       // Auto-detect the user's IANA timezone client-side; backend uses it for quiet hours.
       try {
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
