@@ -46,10 +46,12 @@ export function AuthProvider({ children }) {
       // capture sub id → POST /api/users/me/onesignal-token (which force-links
       // external_id via the transfer endpoint on the backend).
       bindUserToOneSignal(user.id).catch(() => {});
-      // Recovery sweep on every app open — heals any split identity from a
-      // previous session by transferring stray subscriptions to this user
-      // record. Idempotent and cheap; safe to call on every refresh.
-      api.post("/users/me/onesignal-recover").catch(() => {});
+      // DISABLED — the recover sweep was pruning valid subscriptions for users
+      // whose OneSignal record was temporarily unreachable. Do NOT re-enable
+      // until the prune logic is rewritten to require positive confirmation
+      // that a stored sub is dead (not just absent from the by-external_id
+      // lookup, which can transiently 404).
+      // api.post("/users/me/onesignal-recover").catch(() => {});
       // Auto-detect the user's IANA timezone client-side; backend uses it for quiet hours.
       try {
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
